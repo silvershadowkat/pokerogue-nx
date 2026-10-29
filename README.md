@@ -26,6 +26,8 @@ See [NX credits](docs/nx-credits.md) for provenance and licensing.
 
 This is an **offline test port**. Official online login, server saves, and the
 authentic online Daily Run are not integrated. Cheats are not included.
+The active roadmap adds isolated online/offline/SilverShadow modes, custom runs,
+cheats and enhancements. **All minigames are deferred and are not included.**
 The maintainer has played through wave 11 on Switch and confirmed the button
 mapping correction. The latest save fix passes host tests and cross-compilation
 but still needs repeated save/reopen verification on real Switch hardware.

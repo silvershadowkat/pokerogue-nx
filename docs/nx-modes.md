@@ -1,6 +1,6 @@
 # Three-mode product plan
 
-Requested 2026-10-29. This is the implementation specification, not a claim that
+Requested 2026-10-29; minigames explicitly deferred the same day. This is the implementation specification, not a claim that
 the modes already exist. The current build is the offline test described in
 [nx-testing.md](nx-testing.md). Switch is the first target; Android builds remain
 part of the project. Builds and validation are local; inherited GitHub Actions
@@ -21,7 +21,8 @@ into another mode.
 | Manual save import | Never | Yes, including a copy exported from online | Yes, isolated enhanced profile |
 | Manual save export | One-way offline copy where supported by official APIs | Yes | Yes |
 | Google cloud saves | No custom Google integration | No | No |
-| Enhanced minigames | No | No | Yes, with original credits |
+| Custom runs (Boss Rush, Custom, Random) | No | No | Yes, planned |
+| Minigames | No | No | Excluded for now |
 
 ## Online boundary
 
@@ -59,7 +60,8 @@ import/export clear and available in the two local modes.
 Use the old project as a feature inventory and behavioral reference. Do not merge
 the Scooom-derived application or its patch pipeline into this fork. Implement
 small explicit modules against the current official source and keep the standard
-and online bundles free of cheat code. Retain attribution for any adapted code;
+and online bundles free of cheat code. Minigames, their menu entries, currencies,
+assets and music are excluded from this phase. Retain attribution for adapted code;
 rewriting integration does not erase upstream credit or license obligations.
 
 Proposed cheats categories: Battle, Capture, Progression, Rewards/Economy,
@@ -67,8 +69,8 @@ Starters/Collection, and Encounters. Each entry should explain when it takes
 effect, its limits, and whether it changes saved progress. Provide per-category
 reset and a clearly labeled master disable. No cheat applies outside this mode.
 
-See [nx-migration-inventory.md](nx-migration-inventory.md) for source attribution
-and feature discovery. No AI-generated game assets are to be added. Reuse
+See [nx-migration-inventory.md](nx-migration-inventory.md) for custom runs,
+enhancements, and deferred attribution records. No AI-generated game assets are to be added. Reuse
 appropriately credited existing assets; do not copy generated artwork or custom
 music with unestablished redistribution terms from the old local build.
 
@@ -77,7 +79,7 @@ music with unestablished redistribution terms from the old local build.
 1. Verify repeated Switch save/reopen on the 0.1.3 fix.
 2. Implement isolated mode profiles, lifecycle switching, and capability tests.
 3. Validate the inherited official online path and one-way export boundary.
-4. Reimplement enhanced settings/cheats and minigames in SilverShadow mode.
+4. Reimplement enhanced settings/cheats and custom run modes in SilverShadow mode.
 5. Test Switch and Android, including direct touch and controller navigation.
 6. Archive the old project only after replacement feature acceptance and save
    migration are complete. Do not archive or modify the old project now.
