@@ -12,6 +12,7 @@ clone quickjs https://github.com/quickjs-ng/quickjs v0.17.0
 git -C third_party/quickjs checkout -q -- .
 for p in patches/quickjs-*.patch; do git -C third_party/quickjs apply "$PWD/$p"; done
 clone plutovg https://github.com/sammycage/plutovg v1.3.3
+clone faad2 https://github.com/knik0/faad2 2.11.4
 mkdir -p third_party/stb
 STB=f58f558c120e9b32c217290b80bad1a0729fbb2c   # nothings/stb, 2025-05-26 (stb_image 2.30)
 for f in stb_image.h stb_image_write.h; do

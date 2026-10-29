@@ -296,7 +296,7 @@
       super.click();
       if (this.type !== "file" || this.disabled || !N.pickFile) return;
       N.pickFile("Import: choose a file from " + N.dataDir + "/" + EXPORT_DIR + "/ (exports from this app go there; " +
-        "files can also be copied there with VitaShell)", EXPORT_DIR, this.accept);
+        "files can also be copied there with a file manager)", EXPORT_DIR, this.accept);
       const input = this;
       const hook = () => {
         const r = N.pickPoll();
@@ -341,8 +341,13 @@
       const name = (this.download || "download").replace(/[\\/:*?"<>|]/g, "_");
       const ok = N.writeFile(EXPORT_DIR + "/" + name, bytes);
       N.log("[download] " + name + " (" + bytes.length + " bytes) " + (ok ? "saved" : "could not be saved"));
-      N.notice(ok ? "Saved " + name + "\nto " + N.dataDir + "/" + EXPORT_DIR + "/\n\nImport it from the game's Manage Data menu " +
-        "(also in the other game mode: online / offline), or copy it to a PC with VitaShell." : "Could not save " + name + " to the memory card.");
+      if (N.exportDocument) {
+        if (ok) N.exportDocument(name);
+        else N.notice("Could not prepare the save export.");
+        return;
+      }
+      N.notice(ok ? "Saved " + name + "\nto " + N.dataDir + "/" + EXPORT_DIR + "/\n\nImport it from the game's Manage Data menu, " +
+        "or copy it to a PC with a file manager." : "Could not save " + name + " to the memory card.");
     }
   }
   class HTMLIFrameElement extends HTMLElement { get contentWindow() { return null; } }

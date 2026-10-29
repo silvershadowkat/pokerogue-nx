@@ -25,11 +25,19 @@
 
 #include <curl/curl.h>
 #include "miniz.h"
+#ifdef __ANDROID__
+#include <SDL.h>
+#endif
+#ifdef __SWITCH__
+#include <switch.h>
+#endif
+#ifndef PKR_MBEDTLS
 #include <openssl/err.h>
 #include <openssl/pem.h>
 #include <openssl/rand.h>
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
+#endif
 
 #include "host.h"
 
@@ -46,6 +54,7 @@
 // The CA bundle is parsed once into a shared OpenSSL certificate store that every connection uses.
 // (Handing curl the bundle per request makes it re-parse ~150 certificates for each new connection,
 // which on the Vita is slow and fails under the game's many parallel downloads.)
+#ifndef PKR_MBEDTLS
 static X509_STORE *ca_store;
 
 static X509_STORE *load_ca_store(const char *data, size_t len) {
@@ -73,6 +82,7 @@ static X509_STORE *load_ca_store(const char *data, size_t len) {
     host_log("[net] %d CA certificates loaded (%d skipped)", n, bad);
     return store;
 }
+#endif
 
 #ifdef __vita__
 // OpenSSL finds no OS entropy source on the Vita ("Insufficient randomness" on every TLS
@@ -96,16 +106,25 @@ static RAND_METHOD vita_rand = {vita_rand_seed, vita_rand_bytes, NULL, vita_rand
 bool host_random_bytes(void *buf, size_t n) {
 #ifdef __vita__
     return vita_rand_bytes(buf, (int)n);
+#elif defined(__SWITCH__)
+    randomGet(buf, n);
+    return true;
+#elif defined(__ANDROID__)
+    // Bionic's OS-seeded CSPRNG is available before API 28's getrandom wrapper.
+    arc4random_buf(buf, n);
+    return true;
 #else
     return RAND_bytes(buf, (int)n) == 1;
 #endif
 }
 
+#ifndef PKR_MBEDTLS
 static CURLcode ssl_ctx_cb(CURL *curl, void *sslctx, void *userptr) {
     X509_STORE_up_ref(ca_store);
     SSL_CTX_set_cert_store((SSL_CTX *)sslctx, ca_store);
     return CURLE_OK;
 }
+#endif
 
 // <data>/http-cache/<2 hex>/<14 hex> from a hash of the URL (the disk cache). exFAT finds a name by scanning its
 // folder: with every entry in one folder (the old <data>/http/, thousands of files) each open on the
@@ -210,6 +229,7 @@ void net_init(void) {
     multi = curl_multi_init();
     net_set_origin(g_cfg.base_url);
     // PKR_CA_FILE (Linux) tests the same in-memory path the Vita uses.
+#ifndef PKR_MBEDTLS
     const char *ca = getenv("PKR_CA_FILE");
 #ifdef CA_FILE
     if (!ca) ca = CA_FILE;
@@ -232,6 +252,7 @@ void net_init(void) {
             host_log("[net] cannot open CA bundle %s; HTTPS will fail", ca);
         }
     }
+#endif
     // Like browsers: at most 6 connections per host; extra requests wait and reuse them.
     curl_multi_setopt(multi, CURLMOPT_MAX_HOST_CONNECTIONS, 6L);
     curl_multi_setopt(multi, CURLMOPT_MAX_TOTAL_CONNECTIONS, 8L);
@@ -428,11 +449,19 @@ static void apply_common_opts(CURL *e) {
     curl_easy_setopt(e, CURLOPT_NOSIGNAL, 1L);
     curl_easy_setopt(e, CURLOPT_CONNECTTIMEOUT, 15L);
     curl_easy_setopt(e, CURLOPT_TIMEOUT, 120L);
+#ifdef __SWITCH__
+    curl_easy_setopt(e, CURLOPT_CAINFO, "romfs:/cacert.pem");
+#elif defined(__ANDROID__)
+    char ca_path[1024];
+    snprintf(ca_path, sizeof ca_path, "%s/cacert.pem", g_cfg.data_dir);
+    curl_easy_setopt(e, CURLOPT_CAINFO, ca_path);
+#elif !defined(PKR_MBEDTLS)
     if (ca_store) {
         curl_easy_setopt(e, CURLOPT_CAINFO, NULL);
         curl_easy_setopt(e, CURLOPT_CAPATH, NULL);
         curl_easy_setopt(e, CURLOPT_SSL_CTX_FUNCTION, ssl_ctx_cb);
     }
+#endif
 }
 
 static CURL *make_easy(const char *raw_url) {
@@ -526,6 +555,16 @@ bool net_is_local(const char *url) {
 // its 34,000 files took hours on the Vita's memory card.
 static mz_zip_archive local_zip;
 static int local_zip_state; // 0 not opened, 1 open, -1 failed
+#ifdef __ANDROID__
+// SDL opens uncompressed APK assets with random access. Keep the entire game
+// archive in the APK instead of copying or unpacking it to private storage.
+static SDL_RWops *apk_game;
+static size_t apk_zip_read(void *opaque, mz_uint64 offset, void *buffer, size_t length) {
+    SDL_RWops *asset = opaque;
+    if (SDL_RWseek(asset, (Sint64)offset, RW_SEEK_SET) < 0) return 0;
+    return SDL_RWread(asset, buffer, 1, length);
+}
+#endif
 
 static bool local_is_zip(void) {
     size_t n = strlen(g_cfg.local_dir);
@@ -543,7 +582,15 @@ static char *zip_read(const char *name, size_t *len) {
 static char *zip_read_locked(const char *name, size_t *len) {
     if (local_zip_state == 0) {
         memset(&local_zip, 0, sizeof local_zip);
+#ifdef __ANDROID__
+        apk_game = SDL_RWFromFile("game.zip", "rb");
+        Sint64 size = apk_game ? SDL_RWsize(apk_game) : -1;
+        local_zip.m_pRead = apk_zip_read;
+        local_zip.m_pIO_opaque = apk_game;
+        local_zip_state = size > 0 && mz_zip_reader_init(&local_zip, (mz_uint64)size, 0) ? 1 : -1;
+#else
         local_zip_state = mz_zip_reader_init_file(&local_zip, g_cfg.local_dir, 0) ? 1 : -1;
+#endif
         if (local_zip_state < 0) host_log("[local] can't open %s as a zip", g_cfg.local_dir);
         else host_log("[local] %s: %u files", g_cfg.local_dir, (unsigned)mz_zip_reader_get_num_files(&local_zip));
     }
@@ -1161,10 +1208,12 @@ void net_poll(JSContext *ctx) {
         }
         if (r->from_cache) {
             if (r->local_status == 404) {
-                buf_add(&r->resp_headers, "HTTP/1.1 404 Not Found\r\n\r\n", 28);
+                static const char not_found[] = "HTTP/1.1 404 Not Found\r\n\r\n";
+                buf_add(&r->resp_headers, not_found, sizeof not_found - 1);
                 deliver(ctx, r, 404, NULL, NULL);
             } else {
-                buf_add(&r->resp_headers, "HTTP/1.1 200 OK\r\nx-runtime-cache: hit\r\n\r\n", 41);
+                static const char cached[] = "HTTP/1.1 200 OK\r\nx-runtime-cache: hit\r\n\r\n";
+                buf_add(&r->resp_headers, cached, sizeof cached - 1);
                 n_cache_hits++;
                 deliver(ctx, r, 200, NULL, NULL);
             }

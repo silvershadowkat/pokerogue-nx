@@ -1,11 +1,32 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // localStorage / sessionStorage and document.cookie, persisted as JSON files in the data dir.
-// Writes are batched: at most once per second, and the files are replaced atomically.
+// Writes are batched: at most once per second. Switch keeps recovery copies.
 (function (g) {
   "use strict";
   const N = g.__native, rt = g.__rt;
 
+  const recovered = new Set();
   function load(file) {
+    if (N.storageBackupRecovery) {
+      // A complete pending file is newer than the installed save, including
+      // files left by older builds whose rename-over-existing failed on Switch.
+      for (const candidate of [file + ".tmp", file, file + ".bak"]) {
+        try {
+          const s = N.readFile(candidate);
+          if (!s) continue;
+          const data = JSON.parse(s);
+          if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("invalid storage object");
+          if (file.startsWith("localStorage") && Object.values(data).some(v => typeof v !== "string"))
+            throw new Error("invalid localStorage values");
+          if (candidate !== file) {
+            N.log("[storage] recovered " + file + " from " + candidate);
+            recovered.add(file);
+          }
+          return data;
+        } catch (e) { N.log("[storage] " + candidate + " unreadable: " + e); }
+      }
+      return {};
+    }
     try { const s = N.readFile(file); return s ? JSON.parse(s) : {}; } catch (e) { N.log("[storage] " + file + " unreadable: " + e); return {}; }
   }
   const dirty = new Set();
@@ -18,8 +39,10 @@
     const now = N.now();
     if (!force && now - lastFlush < 1000) return;
     lastFlush = now;
-    for (const f of dirty) if (!write(f, JSON.stringify(writers[f]()))) N.log("[storage] failed to write " + f);
-    dirty.clear();
+    for (const f of dirty) {
+      if (write(f, JSON.stringify(writers[f]()))) dirty.delete(f);
+      else N.log("[storage] failed to write " + f);
+    }
     if (force && N.waitWrites) N.waitWrites();
   }
   rt.frameHooks.push(() => { if (dirty.size) flush(false); });
@@ -28,6 +51,7 @@
   function makeStorage(file) {
     const data = file ? new Map(Object.entries(load(file))) : new Map();
     if (file) writers[file] = () => Object.fromEntries(data);
+    if (recovered.has(file)) dirty.add(file);
     const touch = () => { if (file) dirty.add(file); };
     const api = {
       getItem(k) { k = String(k); return data.has(k) ? data.get(k) : null; },
@@ -62,6 +86,7 @@
   // ---------------------------------------------------------------- cookies
   // { name: { value, expires (ms epoch or 0 = session), domain } }
   const jar = load("cookies.json");
+  if (recovered.has("cookies.json")) dirty.add("cookies.json");
   writers["cookies.json"] = () => {
     const out = {};
     for (const [k, c] of Object.entries(jar)) if (c.expires) out[k] = c; // session cookies are not saved

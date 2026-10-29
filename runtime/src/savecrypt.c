@@ -8,7 +8,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef PKR_MBEDTLS
+#include <mbedtls/md5.h>
+#include <mbedtls/cipher.h>
+#else
 #include <openssl/evp.h>
+#endif
 
 #include "host.h"
 #include "quickjs.h"
@@ -103,10 +108,50 @@ static uint8_t *b64_decode(const char *s, size_t n, size_t *out_len) {
 
 // EVP_BytesToKey(MD5, 1 round): crypto-js's OpenSSL KDF for AES-256 (32-byte key, 16-byte IV).
 static bool derive(const char *pass, size_t pass_len, const uint8_t salt[8], uint8_t key[32], uint8_t iv[16]) {
+#ifdef PKR_MBEDTLS
+    uint8_t material[48], digest[16];
+    for (int i = 0; i < 3; i++) {
+        mbedtls_md5_context ctx;
+        mbedtls_md5_init(&ctx);
+        int rc = mbedtls_md5_starts_ret(&ctx);
+        if (!rc && i) rc = mbedtls_md5_update_ret(&ctx, digest, sizeof digest);
+        if (!rc) rc = mbedtls_md5_update_ret(&ctx, (const uint8_t *)pass, pass_len);
+        if (!rc) rc = mbedtls_md5_update_ret(&ctx, salt, 8);
+        if (!rc) rc = mbedtls_md5_finish_ret(&ctx, digest);
+        mbedtls_md5_free(&ctx);
+        if (rc) return false;
+        memcpy(material + i * 16, digest, 16);
+    }
+    memcpy(key, material, 32);
+    memcpy(iv, material + 32, 16);
+    memset(material, 0, sizeof material);
+    memset(digest, 0, sizeof digest);
+    return true;
+#else
     return EVP_BytesToKey(EVP_aes_256_cbc(), EVP_md5(), salt, (const unsigned char *)pass, (int)pass_len, 1, key, iv) == 32;
+#endif
 }
 
 static uint8_t *aes_cbc(bool enc, const uint8_t key[32], const uint8_t iv[16], const uint8_t *in, size_t n, size_t *out_len) {
+#ifdef PKR_MBEDTLS
+    if (n > SIZE_MAX - 32) return NULL;
+    uint8_t *out = malloc(n + 32);
+    if (!out) return NULL;
+    mbedtls_cipher_context_t c;
+    mbedtls_cipher_init(&c);
+    size_t l1 = 0, l2 = 0;
+    int rc = mbedtls_cipher_setup(&c, mbedtls_cipher_info_from_type(MBEDTLS_CIPHER_AES_256_CBC));
+    if (!rc) rc = mbedtls_cipher_setkey(&c, key, 256, enc ? MBEDTLS_ENCRYPT : MBEDTLS_DECRYPT);
+    if (!rc) rc = mbedtls_cipher_set_padding_mode(&c, MBEDTLS_PADDING_PKCS7);
+    if (!rc) rc = mbedtls_cipher_set_iv(&c, iv, 16);
+    if (!rc) rc = mbedtls_cipher_reset(&c);
+    if (!rc) rc = mbedtls_cipher_update(&c, in, n, out, &l1);
+    if (!rc) rc = mbedtls_cipher_finish(&c, out + l1, &l2);
+    mbedtls_cipher_free(&c);
+    if (rc) { free(out); return NULL; }
+    *out_len = l1 + l2;
+    return out;
+#else
     EVP_CIPHER_CTX *c = EVP_CIPHER_CTX_new();
     if (!c) return NULL;
     uint8_t *out = malloc(n + 32);
@@ -120,6 +165,7 @@ static uint8_t *aes_cbc(bool enc, const uint8_t key[32], const uint8_t iv[16], c
     }
     *out_len = (size_t)l1 + (size_t)l2;
     return out;
+#endif
 }
 
 static JSValue ab(JSContext *ctx, const uint8_t *p, size_t n) { return JS_NewArrayBufferCopy(ctx, p, n); }

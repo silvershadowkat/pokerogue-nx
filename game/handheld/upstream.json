@@ -1,0 +1,8 @@
+{
+  "officialRepository": "https://github.com/pagefaultgames/pokerogue",
+  "officialCommit": "215a58aaf1e88c94dda8b50457ac16bd2fffcc9b",
+  "runtimeRepository": "https://github.com/krappaU/pokerogue-vita",
+  "runtimeCommit": "01e917799043101c37c07fb7e5a5901b1de8e397",
+  "assetsCommit": "8250b23677d4918801fc6fc1e95b6dd1c30ef6c4",
+  "localesCommit": "b24c6f3d1b3f4449440d0200487e614e69b5df3d"
+}

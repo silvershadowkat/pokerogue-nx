@@ -11,14 +11,39 @@
     N.loadScript(f);
   }
   const rt = g.__rt, doc = g.document;
+  if (N.handheldTouch) N.loadScript("handheld-touch.js");
   rt.onPhaserLoaded = rt.onPhaserLoaded || []; // shim code that needs Phaser registers here
 
   // Debugging aid (debug builds): <data>/debug.js, if present, runs before the game loads (hooks).
   // g.__shaderHook(source), if a debug script defines it, can rewrite shader sources.
-  const debugScript = N.debug && N.readFile("debug.js");
+  const debugScript = N.debug && N.probeScripts !== false && N.readFile("debug.js");
   if (debugScript) {
     N.log("[debug] running debug.js from the data folder");
     try { (0, eval)(debugScript); } catch (e) { N.log("[debug] debug.js failed: " + e + "\n" + (e && e.stack)); }
+  }
+
+  // Read-only phase markers for comparing startup/encounter delays with host
+  // frame-time and memory logs. No inputs, battle-state edits or save content.
+  if (N.logging) {
+    const started = N.now();
+    let lastPoll = 0, previous = "";
+    rt.frameHooks.push(() => {
+      const now = N.now();
+      if (now - lastPoll < 100) return;
+      lastPoll = now;
+      try {
+        const game = rt.renderer && rt.renderer.game;
+        const scene = game && game.scene.getScene("battle");
+        if (!scene || !scene.ui || !scene.phaseManager) return;
+        const phase = scene.phaseManager.getCurrentPhase();
+        const state = JSON.stringify({phase: phase && phase.phaseName, mode: scene.ui.mode,
+          wave: scene.currentBattle && scene.currentBattle.waveIndex});
+        if (state !== previous) {
+          previous = state;
+          N.log("[game-state] +" + ((now - started) / 1000).toFixed(2) + "s since bootstrap " + state);
+        }
+      } catch (_) { /* upstream UI shape can change; logging must not stop play */ }
+    });
   }
 
   // Runtime adjustments to Phaser, applied the moment the game's bundle assigns window.Phaser

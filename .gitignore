@@ -22,3 +22,12 @@ __pycache__/
 # Dev server (tools/devserver): secrets and logs
 tools/devserver/.env
 tools/devserver/data/
+
+# NX local deliveries, signing material and player data
+/outputs/
+/work/
+**/localStorage*.json*
+*.keystore
+*.jks
+*.nro
+*.apk

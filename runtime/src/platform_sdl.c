@@ -10,6 +10,12 @@
 
 #include <GLES2/gl2.h>
 #include <SDL.h>
+#ifdef __ANDROID__
+#include <jni.h>
+#endif
+#ifdef __SWITCH__
+#include <switch.h>
+#endif
 
 #include "host.h"
 
@@ -113,6 +119,8 @@ bool plat_init(int w, int h) {
     for (int i = 0; i < 12; i++) snprintf(fkey[i], sizeof fkey[i], "F%d", i + 1);
 
     SDL_SetHint(SDL_HINT_VIDEO_X11_FORCE_EGL, "1");
+    // Touch already has its own path; synthesized mouse events would select twice.
+    SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER | SDL_INIT_EVENTS) != 0) {
         host_log("SDL_Init: %s", SDL_GetError());
         return false;
@@ -123,7 +131,11 @@ bool plat_init(int w, int h) {
     SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 0);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    win = SDL_CreateWindow("PokeRogue", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, w, h, SDL_WINDOW_OPENGL);
+    Uint32 flags = SDL_WINDOW_OPENGL;
+#ifdef __ANDROID__
+    flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+#endif
+    win = SDL_CreateWindow("PokeRogue", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, w, h, flags);
     if (!win) {
         host_log("SDL_CreateWindow: %s", SDL_GetError());
         return false;
@@ -134,7 +146,18 @@ bool plat_init(int w, int h) {
         return false;
     }
     SDL_GL_SetSwapInterval(1);
+#ifdef __ANDROID__
+    SDL_GetWindowSize(win, &g_cfg.win_w, &g_cfg.win_h);
+#endif
     host_log("GL: %s | %s", (const char *)glGetString(GL_VERSION), (const char *)glGetString(GL_RENDERER));
+#ifdef __SWITCH__
+    const char *renderer = (const char *)glGetString(GL_RENDERER);
+    if (!renderer || strstr(renderer, "llvmpipe") || strstr(renderer, "softpipe") || strstr(renderer, "Software")) {
+        host_log("[gpu] Hardware GPU renderer required; refusing software rendering");
+        return false;
+    }
+    host_log("[gpu] Switch native EGL/GLES path active: %s", renderer);
+#endif
     return true;
 }
 
@@ -145,6 +168,9 @@ void plat_shutdown(void) {
 }
 
 bool plat_poll_event(plat_event *ev) {
+#ifdef __SWITCH__
+    if (!appletMainLoop()) { ev->type = PEV_QUIT; return true; }
+#endif
     if (n_injected) {
         *ev = injected[0];
         memmove(injected, injected + 1, --n_injected * sizeof *injected);
@@ -173,6 +199,17 @@ bool plat_poll_event(plat_event *ev) {
             ev->x = e.motion.x;
             ev->y = e.motion.y;
             return true;
+        case SDL_FINGERDOWN:
+        case SDL_FINGERUP:
+        case SDL_FINGERMOTION: {
+            int w, h;
+            SDL_GetWindowSize(win, &w, &h);
+            ev->type = e.type == SDL_FINGERDOWN ? PEV_POINTER_DOWN :
+                       e.type == SDL_FINGERUP ? PEV_POINTER_UP : PEV_POINTER_MOVE;
+            ev->x = e.tfinger.x * w;
+            ev->y = e.tfinger.y * h;
+            return true;
+        }
         case SDL_CONTROLLERDEVICEADDED:
             for (int i = 0; i < 4; i++) {
                 if (!pads[i]) {
@@ -199,7 +236,14 @@ bool plat_poll_event(plat_event *ev) {
 
 int plat_gamepads(plat_gamepad *out, int max) {
     static const SDL_GameControllerButton map[17] = {
+#ifdef __SWITCH__
+        // Switch SDL normalizes Nintendo's A/B and X/Y to Xbox positions.
+        // The game's generic pad profile labels these indices A/B/X/Y, so
+        // restore Nintendo's printed letters: A confirms and B cancels.
+        SDL_CONTROLLER_BUTTON_B, SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_Y, SDL_CONTROLLER_BUTTON_X,
+#else
         SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_B, SDL_CONTROLLER_BUTTON_X, SDL_CONTROLLER_BUTTON_Y,
+#endif
         SDL_CONTROLLER_BUTTON_LEFTSHOULDER, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER,
         SDL_CONTROLLER_BUTTON_INVALID, SDL_CONTROLLER_BUTTON_INVALID, // triggers are axes in SDL
         SDL_CONTROLLER_BUTTON_BACK, SDL_CONTROLLER_BUTTON_START,
@@ -304,7 +348,14 @@ static void *null_audio_thread(void *arg) {
         audio_mix_fn(buf, 1024);
         next.tv_nsec += (long)(1024LL * 1000000000LL / rate);
         while (next.tv_nsec >= 1000000000L) next.tv_nsec -= 1000000000L, next.tv_sec++;
+#ifdef __SWITCH__
+        struct timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        int64_t delay = (int64_t)(next.tv_sec - now.tv_sec) * 1000000000LL + next.tv_nsec - now.tv_nsec;
+        if (delay > 0) svcSleepThread(delay);
+#else
         clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next, NULL);
+#endif
     }
     return NULL;
 }
@@ -330,5 +381,22 @@ void plat_thread_setup(const char *name, int core, int priority) { (void)name, (
 
 void plat_relaunch(int argc, char **argv) {
     (void)argc;
+#ifdef __SWITCH__
+    (void)argv;
+    envSetNextLoad("sdmc:/switch/pokerogue-native-test/pokerogue-native-test.nro", "");
+    exit(0);
+#elif defined(__ANDROID__)
+    (void)argv;
+    JNIEnv *env = SDL_AndroidGetJNIEnv();
+    jobject activity = SDL_AndroidGetActivity();
+    jclass cls = (*env)->GetObjectClass(env, activity);
+    jmethodID method = (*env)->GetMethodID(env, cls, "restartGame", "()V");
+    if (method) (*env)->CallVoidMethod(env, activity, method);
+    (*env)->DeleteLocalRef(env, cls);
+    (*env)->DeleteLocalRef(env, activity);
+    SDL_Event event = {.type = SDL_QUIT};
+    SDL_PushEvent(&event);
+#else
     execv("/proc/self/exe", argv);
+#endif
 }

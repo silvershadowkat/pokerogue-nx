@@ -49,6 +49,10 @@ int _newlib_heap_size_user = 256 * 1024 * 1024;
 #else
 #define DEFAULT_CONTROL NULL // player builds: no control channel (it reads a file every frame)
 #endif
+#elif defined(__SWITCH__)
+#define DEFAULT_JS_DIR "romfs:/js"
+#define DEFAULT_DATA_DIR "sdmc:/switch/pokerogue-native-test"
+#define DEFAULT_CONTROL NULL
 #else
 #define DEFAULT_JS_DIR "js"
 #define DEFAULT_DATA_DIR "data"
@@ -60,8 +64,18 @@ host_config g_cfg = {
     .js_dir = DEFAULT_JS_DIR,
     .data_dir = DEFAULT_DATA_DIR,
     .control = DEFAULT_CONTROL,
+#ifdef __SWITCH__
+    .win_w = 1280,
+    .win_h = 720,
+    .osk = true,
+#elif defined(__ANDROID__)
+    .win_w = 1280,
+    .win_h = 960,
+    .osk = true,
+#else
     .win_w = 960,
     .win_h = 544,
+#endif
     .exit_after_frames = 0,
     .busy_after_ms = 2500,
     .max_textures = 4, // Phaser's shader picks a sprite's texture with an if per unit: 16 cost GPU time
@@ -420,7 +434,13 @@ static void control_poll(JSContext *ctx, bool *quit) {
 #define PKR_FLAVOR ""
 #endif
 
-const char *host_version_string(void) { return "PokeRogue Vita " PKR_VERSION PKR_FLAVOR " (" PKR_COMMIT ")"; }
+const char *host_version_string(void) {
+#ifdef __SWITCH__
+    return "PokeRogue Native Switch Test 0.1 (" PKR_COMMIT ")";
+#else
+    return "PokeRogue Native " PKR_VERSION PKR_FLAVOR " (" PKR_COMMIT ")";
+#endif
+}
 
 // ---------------------------------------------------------------- frame stats
 
@@ -1078,7 +1098,11 @@ static void relaunch(JSContext *ctx, int argc, char **argv) {
     host_log("[app] restarting (the game asked to reload the page)");
     host_log_flush();
     plat_relaunch(argc, argv);
+#ifdef __ANDROID__
+    host_log("[app] Android restart handed to activity");
+#else
     host_log("[app] restart failed; carrying on");
+#endif
     g_relaunch = false;
 }
 
@@ -1096,6 +1120,7 @@ static void relaunch_mode(char *out, size_t n) {
 
 int main(int argc, char **argv) {
     t_main_start = host_now_ms();
+    phase_t0 = t_main_start;
     // The data dir may come from the command line; the config file lives inside it.
     for (int i = 1; i + 1 < argc; i++)
         if (!strcmp(argv[i], "--data")) g_cfg.data_dir = argv[i + 1];
@@ -1113,6 +1138,20 @@ int main(int argc, char **argv) {
             return 2;
         }
     }
+#ifdef PKR_OFFLINE_TEST
+    // The first hardware package is an offline evaluation. A missing/edited
+    // config must not send the player into the reference runtime's live site.
+#ifdef __ANDROID__
+    g_cfg.local_dir = "game.zip"; // asset inside the APK, opened by SDL_RWops
+#else
+    static char test_archive[700];
+    snprintf(test_archive, sizeof test_archive, "%s/game.zip", g_cfg.data_dir);
+    g_cfg.local_dir = test_archive;
+#endif
+    g_cfg.base_url = LOCAL_ORIGIN "/";
+    g_cfg.force_online = false;
+    g_cfg.control = NULL;
+#endif
     mkdirs(g_cfg.data_dir);
     char path[512], prev_log[512];
     snprintf(path, sizeof path, "%s/log.txt", g_cfg.data_dir);
@@ -1343,6 +1382,7 @@ int main(int argc, char **argv) {
 #endif
     }
 
+    host_call_rt(ctx, "flushStorage", 0, NULL);
     host_js_shutdown();
     net_shutdown();
     plat_shutdown();

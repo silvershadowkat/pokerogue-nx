@@ -1,0 +1,12 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.silvershadow.pokerogue.nativehandheld" android:versionCode="2" android:versionName="0.1.1-native-test">
+ <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="35"/>
+ <uses-feature android:glEsVersion="0x00020000" android:required="true"/>
+ <uses-feature android:name="android.hardware.touchscreen" android:required="false"/>
+ <uses-feature android:name="android.hardware.gamepad" android:required="false"/>
+ <application android:label="PokeRogue Native Test" android:icon="@drawable/icon" android:allowBackup="false" android:debuggable="true" android:extractNativeLibs="true" android:theme="@android:style/Theme.NoTitleBar.Fullscreen" android:hardwareAccelerated="true">
+  <activity android:name=".NativeActivity" android:exported="true" android:screenOrientation="sensorLandscape" android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|navigation|uiMode|smallestScreenSize|density">
+   <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+  </activity>
+  <activity android:name=".RestartActivity" android:exported="false" android:process=":restart" android:screenOrientation="sensorLandscape"/>
+ </application>
+</manifest>

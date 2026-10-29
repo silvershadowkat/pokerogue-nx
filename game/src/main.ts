@@ -37,6 +37,7 @@ async function startGame(): Promise<void> {
       width: 1920,
       height: 1080,
       mode: Phaser.Scale.FIT,
+      ...(import.meta.env.VITE_HANDHELD === "1" ? { autoCenter: Phaser.Scale.CENTER_BOTH } : {}),
     },
     plugins: {
       global: [
@@ -77,11 +78,16 @@ async function startGame(): Promise<void> {
       createContainer: true,
     },
     antialias: false,
+    fps: import.meta.env.VITE_HANDHELD === "1" ? { target: 60, limit: 60 } : undefined,
     pipeline: [InvertPostFX] as unknown as Phaser.Types.Core.PipelineConfig,
     scene: [LoadingScene, BattleScene],
     version,
   });
   game.sound.pauseOnBlur = isMobile();
+  if (import.meta.env.VITE_HANDHELD === "1") {
+    const { installHandheld } = await import("./handheld/handheld");
+    installHandheld(game);
+  }
 }
 
 try {

@@ -10,6 +10,11 @@
 #include <time.h>
 
 #include "host.h"
+#include "storage_file.h"
+#ifdef __ANDROID__
+#include <SDL.h>
+#include <jni.h>
+#endif
 
 static JSRuntime *rt;
 static JSContext *g_ctx;
@@ -562,6 +567,15 @@ static JSValue n_now(JSContext *ctx, JSValueConst this_val, int argc, JSValueCon
     return JS_NewFloat64(ctx, host_now_ms());
 }
 
+static JSValue n_screen_size(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
+    int w, h;
+    plat_drawable_size(&w, &h);
+    JSValue size = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, size, "width", JS_NewInt32(ctx, w));
+    JS_SetPropertyStr(ctx, size, "height", JS_NewInt32(ctx, h));
+    return size;
+}
+
 // readFile(relPath) -> string | null, relative to the data dir.
 static JSValue n_read_file(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
     const char *rel = JS_ToCString(ctx, argv[0]);
@@ -580,15 +594,9 @@ static JSValue n_read_file(JSContext *ctx, JSValueConst this_val, int argc, JSVa
     return v;
 }
 
-// Writes data to `path` through a temp file and a rename, so a crash never leaves half a file.
+// Platform-aware replacement, retaining a recoverable previous file on Switch.
 static bool write_atomic(const char *path, const char *data, size_t len) {
-    char tmp[1100];
-    snprintf(tmp, sizeof tmp, "%s.tmp", path);
-    FILE *f = fopen(tmp, "wb");
-    if (!f) return false;
-    bool ok = fwrite(data, 1, len, f) == len;
-    ok &= fclose(f) == 0;
-    return ok && rename(tmp, path) == 0;
+    return storage_write_file(path, data, len);
 }
 
 // `rel` under the data folder, with its missing parent folders created; false for "..".
@@ -1054,6 +1062,18 @@ static JSValue n_notice(JSContext *ctx, JSValueConst this_val, int argc, JSValue
 
 // pickFile(title, relDir, extensions): file picker over the game on <data>/relDir (dialogs.c)
 static JSValue n_pick_file(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
+#ifdef __ANDROID__
+    JNIEnv *env = SDL_AndroidGetJNIEnv();
+    jobject activity = SDL_AndroidGetActivity();
+    jclass cls = (*env)->GetObjectClass(env, activity);
+    jmethodID method = (*env)->GetMethodID(env, cls, "pickSaveDocument", "()V");
+    if (method) (*env)->CallVoidMethod(env, activity, method);
+    bool failed = (*env)->ExceptionCheck(env);
+    if (failed) (*env)->ExceptionClear(env);
+    (*env)->DeleteLocalRef(env, cls);
+    (*env)->DeleteLocalRef(env, activity);
+    return failed ? JS_ThrowInternalError(ctx, "Cannot open Android save picker") : JS_UNDEFINED;
+#else
     const char *title = JS_ToCString(ctx, argv[0]), *rel = JS_ToCString(ctx, argv[1]), *ext = JS_ToCString(ctx, argv[2]);
     if (title && rel && ext && !strstr(rel, "..")) {
         char dir[1024];
@@ -1063,10 +1083,43 @@ static JSValue n_pick_file(JSContext *ctx, JSValueConst this_val, int argc, JSVa
     }
     JS_FreeCString(ctx, title), JS_FreeCString(ctx, rel), JS_FreeCString(ctx, ext);
     return JS_UNDEFINED;
+#endif
 }
 
 // pickPoll() -> undefined (nothing yet) | null (cancelled) | [name, ArrayBuffer]
 static JSValue n_pick_poll(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
+#ifdef __ANDROID__
+    JNIEnv *env = SDL_AndroidGetJNIEnv();
+    jobject activity = SDL_AndroidGetActivity();
+    jclass cls = (*env)->GetObjectClass(env, activity);
+    jmethodID method = (*env)->GetMethodID(env, cls, "pollSaveDocument", "()[Ljava/lang/Object;");
+    jobjectArray value = method ? (*env)->CallObjectMethod(env, activity, method) : NULL;
+    bool failed = (*env)->ExceptionCheck(env);
+    if (failed) (*env)->ExceptionClear(env);
+    JSValue ret = failed ? JS_NULL : JS_UNDEFINED;
+    if (value) {
+        ret = JS_NULL;
+        if ((*env)->GetArrayLength(env, value) == 2) {
+            jstring name = (*env)->GetObjectArrayElement(env, value, 0);
+            jbyteArray bytes = (*env)->GetObjectArrayElement(env, value, 1);
+            const char *text = (*env)->GetStringUTFChars(env, name, NULL);
+            jbyte *buf = (*env)->GetByteArrayElements(env, bytes, NULL);
+            if (text && buf) {
+                ret = JS_NewArray(ctx);
+                JS_SetPropertyUint32(ctx, ret, 0, JS_NewString(ctx, text));
+                JS_SetPropertyUint32(ctx, ret, 1, JS_NewArrayBufferCopy(ctx, (uint8_t *)buf, (*env)->GetArrayLength(env, bytes)));
+            }
+            if (buf) (*env)->ReleaseByteArrayElements(env, bytes, buf, JNI_ABORT);
+            if (text) (*env)->ReleaseStringUTFChars(env, name, text);
+            (*env)->DeleteLocalRef(env, bytes);
+            (*env)->DeleteLocalRef(env, name);
+        }
+        (*env)->DeleteLocalRef(env, value);
+    }
+    (*env)->DeleteLocalRef(env, cls);
+    (*env)->DeleteLocalRef(env, activity);
+    return ret;
+#else
     const char *path;
     int r = dialog_pick_poll(&path);
     if (!r) return JS_UNDEFINED;
@@ -1088,7 +1141,30 @@ static JSValue n_pick_poll(JSContext *ctx, JSValueConst this_val, int argc, JSVa
     }
     free(buf);
     return ret;
+#endif
 }
+
+#ifdef __ANDROID__
+// The game's existing export first writes a private backup, then offers Android's
+// document picker. No storage permissions or arbitrary path access are needed.
+static JSValue n_export_document(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
+    const char *name = JS_ToCString(ctx, argv[0]);
+    if (!name) return JS_EXCEPTION;
+    JNIEnv *env = SDL_AndroidGetJNIEnv();
+    jobject activity = SDL_AndroidGetActivity();
+    jclass cls = (*env)->GetObjectClass(env, activity);
+    jmethodID method = (*env)->GetMethodID(env, cls, "exportSaveDocument", "(Ljava/lang/String;)V");
+    jstring filename = (*env)->NewStringUTF(env, name);
+    if (method && filename) (*env)->CallVoidMethod(env, activity, method, filename);
+    bool failed = (*env)->ExceptionCheck(env);
+    if (failed) (*env)->ExceptionClear(env);
+    if (filename) (*env)->DeleteLocalRef(env, filename);
+    (*env)->DeleteLocalRef(env, cls);
+    (*env)->DeleteLocalRef(env, activity);
+    JS_FreeCString(ctx, name);
+    return failed ? JS_ThrowInternalError(ctx, "Cannot open Android export picker") : JS_UNDEFINED;
+}
+#endif
 
 // choose(title, options): a choice over the game, options one per line (dialogs.c)
 static JSValue n_choose(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
@@ -1134,6 +1210,9 @@ static const JSCFunctionListEntry native_funcs[] = {
     JS_CFUNC_DEF("showLink", 2, n_show_link),
     JS_CFUNC_DEF("notice", 1, n_notice),
     JS_CFUNC_DEF("pickFile", 3, n_pick_file),
+#ifdef __ANDROID__
+    JS_CFUNC_DEF("exportDocument", 1, n_export_document),
+#endif
     JS_CFUNC_DEF("pickPoll", 0, n_pick_poll),
     JS_CFUNC_DEF("choose", 2, n_choose),
     JS_CFUNC_DEF("choicePoll", 0, n_choice_poll),
@@ -1154,6 +1233,7 @@ static const JSCFunctionListEntry native_funcs[] = {
     JS_CFUNC_DEF("atob", 1, n_atob),
     JS_CFUNC_DEF("log", 1, n_log),
     JS_CFUNC_DEF("now", 0, n_now),
+    JS_CFUNC_DEF("screenSize", 0, n_screen_size),
     JS_CFUNC_DEF("readFile", 1, n_read_file),
     JS_CFUNC_DEF("writeFile", 2, n_write_file),
     JS_CFUNC_DEF("writeFileLater", 2, n_write_file_later),
@@ -1183,6 +1263,9 @@ JSContext *host_js_init(void) {
     JS_SetPropertyStr(ctx, native, "devSendBenchLog", JS_NewCFunction(ctx, n_dev_send_bench_log, "devSendBenchLog", 0));
 #endif
     JS_SetPropertyStr(ctx, native, "baseURL", JS_NewString(ctx, g_cfg.base_url));
+#ifdef __SWITCH__
+    JS_SetPropertyStr(ctx, native, "storageBackupRecovery", JS_TRUE);
+#endif
     JS_SetPropertyStr(ctx, native, "jsDir", JS_NewString(ctx, g_cfg.js_dir));
     JS_SetPropertyStr(ctx, native, "dataDir", JS_NewString(ctx, g_cfg.data_dir));
 #ifdef PKR_DEBUG
@@ -1193,7 +1276,13 @@ JSContext *host_js_init(void) {
     JS_SetPropertyStr(ctx, native, "debug", JS_FALSE);
 #endif
     JS_SetPropertyStr(ctx, native, "logging", JS_NewBool(ctx, host_logging())); // console.* writes to the log
+#if defined(__SWITCH__) || defined(__ANDROID__)
+    JS_SetPropertyStr(ctx, native, "probeScripts", JS_FALSE);
+#endif
     JS_SetPropertyStr(ctx, native, "screenWidth", JS_NewInt32(ctx, g_cfg.win_w));
+#ifdef __ANDROID__
+    JS_SetPropertyStr(ctx, native, "handheldTouch", JS_TRUE);
+#endif
     JS_SetPropertyStr(ctx, native, "screenHeight", JS_NewInt32(ctx, g_cfg.win_h));
     net_register(ctx, native);
     gl_register(ctx, native);
