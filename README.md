@@ -1,8 +1,8 @@
 # PokeRogue NX
 
-An experimental Nintendo Switch homebrew port of official **PokeRogue**, with
-Android and desktop support under development. This is a fork of krappaU's Vita
-client. The native host lives in `runtime/`;
+An experimental native Nintendo Switch port of official **PokeRogue**, using a
+purpose-built compatibility layer derived from krappaU's Vita client. Android
+and desktop support are also under development. The native host lives in `runtime/`;
 a pinned official game subtree under `game/` supplies the offline bundle.
 
 **Native runtime foundation: [krappaU's PokeRogue Vita](https://github.com/krappaU/pokerogue-vita).**
