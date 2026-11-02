@@ -26,10 +26,14 @@ These restrictions do not make a user-controlled executable tamper-proof. Server
 
 Username/password entry uses the official game's login request through verified HTTPS. Native password display is masked; the test keyboard path does not log initial input contents. Account credentials have not been submitted during automated testing. The maintainer has since reported successful Android login, authenticated Daily Run and server-save refresh. External-provider OAuth flows are not yet verified on either device.
 
+## Upstream check
+
+On 2026-11-02 a fresh fetch confirmed that Vita `main` still points to `ea0d7d4123a78bd112535efff5e27fbf9d3bb72b` (runtime 1.0.6). All commits on that branch are included in RC4; there are zero missing mainline commits. The latest arena sprite batching changes are retained. Older experimental branches are not automatically merged.
+
 ## Updates and pending work
 
 Online automatically retrieves the live entry point and manifest, reusing versioned cached assets. Offline checks every six hours and offers an update. Offline downloads currently transfer the full ZIP; real per-file/byte deltas require a separate manifest/range update design. No game archive is extracted to the SD card.
 
 Runtime/app update notifications are not implemented; install updated APK/NRO releases manually. Cached launcher assets are reused locally. Debug, custom modes, a redesigned cheats menu and one-way account export workflow testing are follow-up work.
 
-Before calling the release stable, a person must confirm Switch login, server save/reload and authenticated Daily Run; then repeat offline creation/update/save/reopen. Android account save/Daily also require a real-account check. Device performance and long-session stability remain hardware checks, not build results.
+Before calling the release stable, a person must confirm Switch login, server save/reload and authenticated Daily Run; then repeat offline creation/update/save/reopen. Android login, authenticated Daily and server-data refresh are maintainer-confirmed; save upload/close/reopen remains pending. Device performance and long-session stability remain hardware checks, not build results.

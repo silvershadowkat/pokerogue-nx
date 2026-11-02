@@ -4,7 +4,7 @@ Status as of 2026-11-02. 0.2.0-rc1 is the Vita-derived Online/Offline candidate.
 
 ## 0.2.0-rc4 continuous-motion correction
 
-The maintainer tested RC3 on Retroid and reported that the pad was not smooth or responsive. Investigation reproduced a native renderer bug: every new thumb position restarted the transition at zero progress, preventing visual motion during an uninterrupted slide. RC4 samples the running transition before retargeting. A regression using the actual GLES overlay checks full circular gestures at 30/60/120 Hz, immediate native direction changes and zero D-pad texture uploads. The regression fails on the old renderer and passes after correction. Human feel testing of RC4 remains pending; the input/pose differential tests alone did not establish hardware parity.
+The maintainer tested RC3 on Retroid and reported that the pad was not smooth or responsive. Investigation reproduced a native renderer bug: every new thumb position restarted the transition at zero progress, preventing visual motion during an uninterrupted slide. RC4 samples the running transition before retargeting. A regression using the actual GLES overlay checks full circular gestures at 30/60/120 Hz, immediate native direction changes and zero D-pad texture uploads. The regression fails on the old renderer and passes after correction. On 2026-11-02 the maintainer tested installed RC4 on Retroid and reported that it now felt smooth. Switch feel testing remains pending.
 
 ## 0.2.0-rc3 controller checks
 

@@ -22,7 +22,7 @@ Offline checks for an update and offers it in the selector. Downloads can resume
 
 ## Build and test status
 
-0.2.0-rc4 is a candidate, not a claim of completed Switch account testing. Android has reached the live official login screen on a Retroid Pocket Nova with native Adreno rendering. Login touch selection and masked password entry have been checked without submitting credentials. See [testing evidence](docs/nx-testing.md) and the [release checklist](docs/nx-client-release.md).
+0.2.0-rc4 is a candidate, not a claim of completed Switch account testing. The maintainer confirmed Android official-account login, authenticated Daily matching the website, server-data refresh and smooth RC4 touch-pad feel on Retroid. Full account save-upload/reopen and Switch hardware acceptance remain pending. See [testing evidence](docs/nx-testing.md) and the [release checklist](docs/nx-client-release.md).
 
 - [Build and copy-ready installation](docs/nx-build.md)
 - [Mode boundaries and roadmap](docs/nx-modes.md)
