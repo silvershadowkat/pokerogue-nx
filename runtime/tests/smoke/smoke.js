@@ -107,6 +107,7 @@ async function run() {
   });
   await check("core: Date and Intl basics", () => {
     if (!(Date.now() > Date.UTC(2024, 0, 1))) return "clock before 2024";
+    if (!Number.isInteger(Date.now())) return "fractional save timestamp";
     eq(new Date(Date.UTC(2020, 1, 29)).toISOString(), "2020-02-29T00:00:00.000Z");
     eq(typeof new Intl.NumberFormat("en-US").format(1234.5), "string", "NumberFormat");
   });
