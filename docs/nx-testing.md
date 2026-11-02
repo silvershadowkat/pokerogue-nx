@@ -1,6 +1,6 @@
 # NX testing status
 
-Status as of 2026-11-02. 0.2.0-rc1 is the Vita-derived Online/Offline candidate. Earlier 0.1.x results below describe the old bundled-offline test and do not prove the new account path works on Switch.
+Status as of 2026-11-02. The maintainer approved RC7 for publication as the first public beta after the loading-feedback test. The tested binaries remain unchanged from runtime source `a7521057`. Earlier 0.2.0 sections record the development history; current confirmed behavior is summarized in the RC7 section. Earlier 0.1.x results below describe the old bundled-offline test and do not prove the new account path works on Switch.
 
 ## 0.2.0-rc7: startup loading feedback and save acceptance
 
@@ -8,7 +8,7 @@ The maintainer confirmed the complete Switch/PC online save round trip: a newer 
 
 The remaining startup black gap occurs after Phaser creates its renderer (which disables the initial native status overlay), before a game UI has rendered. RC7 adds a small animated Loading label using the already cached Emerald font, with a bitmap fallback if unavailable. It remains inside the game viewport across 16:9, 4:3 and wide-phone layouts and disappears after a rendered active game UI. Native touch controls stay hidden during this initial gap. The adapter only observes postrender/UI state; it changes no game scenes, account data, inputs or rules. Long startup frames use black with the same label instead of the older centered busy screen.
 
-Host checks cover partial/hidden/inactive/loading UI, renderer replacement, first-render readiness and listener cleanup. Actual GLES tests verify viewport placement, transparency, visibility, cached uploads between animation ticks and disappearance when ready across three aspect ratios. These are functional rendering checks; Switch loading-gap appearance still needs a human check.
+Host checks cover partial/hidden/inactive/loading UI, renderer replacement, first-render readiness and listener cleanup. Actual GLES tests verify viewport placement, transparency, visibility, cached uploads between animation ticks and disappearance when ready across three aspect ratios. These are functional rendering checks. The maintainer subsequently tested the installed RC7 on Switch and confirmed the loading change works.
 
 ## 0.2.0-rc6: Switch cache replacement
 

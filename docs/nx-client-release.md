@@ -1,5 +1,7 @@
 # Client release checks
 
+The maintainer approved **0.2.0-rc7 Public Beta** for publication on 2026-11-02 after confirming the Switch startup loading change. It uses the exact tested APK/NRO from runtime source `a7521057`; no runtime rebuild is needed for the public-beta label. Confirmed functionality and remaining community-test areas are recorded in [nx-testing.md](nx-testing.md).
+
 This candidate follows the Vita-derived client route. The separate full C++ rewrite is preserved elsewhere and is not part of these builds. The upstream runtime merge is recorded as a normal merge commit so future Vita changes can be reviewed and integrated with Git.
 
 ## Vita-specific settings reviewed
