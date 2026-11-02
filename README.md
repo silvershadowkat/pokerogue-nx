@@ -8,11 +8,11 @@ krappaU’s native runtime, QuickJS integration, browser APIs, GPU rendering, au
 
 - **Online:** loads live pokerogue.net, including its normal account login and server APIs. Android login, authenticated Daily Run and server-save refresh have been reported working by the maintainer; Switch verification and full save round-trip testing remain pending. No cheats, developer evaluation channel, or save-file import.
 - **Offline:** downloads the normal offline distribution used by [Admiral-Billy’s app](https://github.com/Admiral-Billy/Pokerogue-App) when requested. Plays directly from one `game.zip`, without extracting tens of thousands of files. No account-server access or cheats.
-- **Debug:** visible but unavailable in 0.2.0-rc2. Isolated SilverShadow cheats, enhancements and custom modes are planned. No minigames or Google Drive integration in this release.
+- **Debug:** visible but unavailable in 0.2.0-rc3. Isolated SilverShadow cheats, enhancements and custom modes are planned. No minigames or Google Drive integration in this release.
 
 The selector uses the official plains background, logo, window, cursor and Emerald font, downloaded and cached on first use. Mode-specific saves, cookies and caches live in separate profiles. Close and reopen the app to choose another mode; the JavaScript runtime is never reused across modes.
 
-Direct menu taps, optional on-screen controls and physical controllers can be used together. The on-screen controls are drawn in code without generated artwork. Some direct-touch screens still require broader device testing; the pad is available as an alternative.
+Direct menu taps, optional on-screen controls and physical controllers can be used together. The optional pad restores our [SilverShadow chevron controller](docs/nx-touch-controls.md), including continuous thumb sliding, neutral capture and diagonal visual leaning. Its original state/pose helpers and vector paths are retained with differential tests; rendering uses cached GPU layers. Some direct-touch screens still require broader device testing; the pad is available as an alternative.
 
 ## Updates
 
@@ -22,7 +22,7 @@ Offline checks for an update and offers it in the selector. Downloads can resume
 
 ## Build and test status
 
-0.2.0-rc2 is a candidate, not a claim of completed Switch account testing. Android has reached the live official login screen on a Retroid Pocket Nova with native Adreno rendering. Login touch selection and masked password entry have been checked without submitting credentials. See [testing evidence](docs/nx-testing.md) and the [release checklist](docs/nx-client-release.md).
+0.2.0-rc3 is a candidate, not a claim of completed Switch account testing. Android has reached the live official login screen on a Retroid Pocket Nova with native Adreno rendering. Login touch selection and masked password entry have been checked without submitting credentials. See [testing evidence](docs/nx-testing.md) and the [release checklist](docs/nx-client-release.md).
 
 - [Build and copy-ready installation](docs/nx-build.md)
 - [Mode boundaries and roadmap](docs/nx-modes.md)

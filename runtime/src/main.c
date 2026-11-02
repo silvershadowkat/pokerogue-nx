@@ -445,7 +445,7 @@ static void control_poll(JSContext *ctx, bool *quit) {
 
 const char *host_version_string(void) {
 #if defined(__SWITCH__) || defined(__ANDROID__)
-    return "PokeRogue NX 0.2.0-rc2 | Vita runtime " PKR_VERSION " (" PKR_COMMIT ")";
+    return "PokeRogue NX 0.2.0-rc3 | Vita runtime " PKR_VERSION " (" PKR_COMMIT ")";
 #else
     return "PokeRogue Native " PKR_VERSION PKR_FLAVOR " (" PKR_COMMIT ")";
 #endif
@@ -1023,6 +1023,7 @@ static void load_config_file(void) {
             g_cfg.direct_touch = atoi(v) != 0;
         } else if (!strcmp(k, "touchpad")) {
             g_cfg.touch_pad = atoi(v) != 0;
+            g_cfg.touch_pad_always = atoi(v) == 2;
         } else if (!strcmp(k, "gamefix")) {
             g_cfg.no_gamefix = atoi(v) == 0;
 #ifdef PKR_DEBUG
@@ -1343,6 +1344,7 @@ int main(int argc, char **argv) {
             osk_frame(np > 0 ? &pad : NULL);
             link_frame(np > 0 ? &pad : NULL);
         }
+        touch_overlay_flush(ctx);
         set_phase("control channel");
         control_poll(ctx, &quit);
         dev_frame();

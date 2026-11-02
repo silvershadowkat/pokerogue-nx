@@ -2,6 +2,10 @@
 
 Status as of 2026-11-02. 0.2.0-rc1 is the Vita-derived Online/Offline candidate. Earlier 0.1.x results below describe the old bundled-offline test and do not prove the new account path works on Switch.
 
+## 0.2.0-rc3 controller checks
+
+The temporary native grid is replaced with the retained SilverShadow controller. Its resolver/pose translation matches 15,045 comparisons against original TypeScript and multi-pointer transition traces. Touch-event, context-mask, scene-cleanup, direct-touch and modal-navigation checks passed. Headless GLES tests exercise the actual native overlay, perspective, opacity, legacy keyboard rendering, neutral-to-slide, action capture, fade/wake and release. Texture upload counting confirms no uploads during D-pad motion after warm-up. This is not a Switch FPS measurement or a human feel check; both target devices still need the new pad tested.
+
 ## Maintainer report and 0.2.0-rc2 control fix
 
 On 2026-11-02 the maintainer reported successful Android official-account login, starting an authenticated Daily Run matching the website, and successfully refreshing stale local account data from the server. These establish login/Daily/server-download behavior, not yet a verified upload/close/reopen round trip. Switch account testing remains pending.

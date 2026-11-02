@@ -132,10 +132,12 @@ static void render(int sel,const int *modes,int n,bool offline_ok,const char *ve
     else snprintf(message,sizeof message,"Touch, physical controls, or both");
     centered(TOG_Y-51,message,24,false);
     for(int i=0;i<N_TOGGLES;i++){
-        char label[80];snprintf(label,sizeof label,"%s: %s",toggles[i].label,*toggles[i].value?"On":"Off");
+        const char *value=*toggles[i].value?"On":"Off";
+        if(i==1&&g_cfg.touch_pad)value=g_cfg.touch_pad_always?"Always":"Fade";
+        char label[80];snprintf(label,sizeof label,"%s: %s",toggles[i].label,value);
         text(52+i*TOG_W,TOG_Y,label,24,false,sel==n+i);
     }
-    centered(TOG_Y+35,"PokeRogue NX 0.2.0-rc2",18,true);
+    centered(TOG_Y+35,"PokeRogue NX 0.2.0-rc3",18,true);
     plutovg_canvas_destroy(canvas);canvas=NULL;plutovg_surface_destroy(surface);
     plutovg_convert_argb_to_rgba(image,image,W,H,W*4);
 }
@@ -195,7 +197,12 @@ int launcher_run(bool offline_ok,const char *version,bool bench,void (*poll)(boo
             }
             memcpy(prev,now,sizeof prev);memcpy(prev_dir,dir,sizeof prev_dir);
         }
-        if(pick>=n){int i=pick-n;*toggles[i].value=!*toggles[i].value;config_set(toggles[i].key,*toggles[i].value?"1":"0");dirty=true;}
+        if(pick>=n){
+            int i=pick-n;
+            if(i==1){int next=g_cfg.touch_pad?(g_cfg.touch_pad_always?0:2):1;g_cfg.touch_pad=next!=0;g_cfg.touch_pad_always=next==2;config_set("touchpad",next==2?"2":next==1?"1":"0");}
+            else{*toggles[i].value=!*toggles[i].value;config_set(toggles[i].key,*toggles[i].value?"1":"0");}
+            dirty=true;
+        }
         else if(pick>=0&&modes[pick]!=M_DEBUG)chosen=true;
         glBindFramebuffer(GL_FRAMEBUFFER,0);glViewport(0,0,sw,sh);glClearColor(0,0,0,1);glClear(GL_COLOR_BUFFER_BIT);
         if(dirty)render(sel,modes,n,offline_ok,version,update);

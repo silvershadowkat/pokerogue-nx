@@ -43,3 +43,7 @@ Maintained by [silvershadowkat](https://github.com/silvershadowkat), with AI cod
 and testing assistance disclosed in [AI_DISCLOSURE.md](../AI_DISCLOSURE.md).
 No AI-generated game assets have been added by this port. Switch hardware tests
 and feedback are provided by the maintainer.
+
+## SilverShadow touch controller
+
+The native chevron controller adapts the maintainer's retained SilverShadow control modules and vector paths, whose input foundation credits [Gen1Recomp](https://github.com/bryanthaboi/gen1recomp). Gen1Recomp portions are copyright 2026 BOIS CLUB GAMES, LLC, MIT licensed. The complete notice is in [THIRD_PARTY_TOUCH_NOTICES.md](../THIRD_PARTY_TOUCH_NOTICES.md). No Xelu fallback PNGs are shipped. See [controller provenance and tests](nx-touch-controls.md).

@@ -14,6 +14,7 @@
   if (N.handheldTouch) {
     N.loadScript("handheld-touch.js");
     N.loadScript("modal-controls.js");
+    N.loadScript("touch-events.js");
   }
   rt.onPhaserLoaded = rt.onPhaserLoaded || []; // shim code that needs Phaser registers here
 

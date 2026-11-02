@@ -1053,6 +1053,12 @@ static JSValue n_show_link(JSContext *ctx, JSValueConst this_val, int argc, JSVa
 }
 
 // notice(text): a message over the game until a button is pressed (dialogs.c)
+static JSValue n_reset_touch(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
+    touch_overlay_reset();return JS_UNDEFINED;
+}
+static JSValue n_touch_mask(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
+    uint32_t mask=0;JS_ToUint32(ctx,&mask,argv[0]);touch_overlay_set_mask(mask);return JS_UNDEFINED;
+}
 static JSValue n_notice(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
     const char *t = JS_ToCString(ctx, argv[0]);
     if (t) dialog_notice(t);
@@ -1214,6 +1220,8 @@ static const JSCFunctionListEntry native_funcs[] = {
     JS_CFUNC_DEF("randomBytes", 1, n_random_bytes),
     JS_CFUNC_DEF("showLink", 2, n_show_link),
     JS_CFUNC_DEF("notice", 1, n_notice),
+    JS_CFUNC_DEF("resetTouchControls", 0, n_reset_touch),
+    JS_CFUNC_DEF("setTouchControlsMask", 1, n_touch_mask),
     JS_CFUNC_DEF("pickFile", 3, n_pick_file),
 #ifdef __ANDROID__
     JS_CFUNC_DEF("exportDocument", 1, n_export_document),

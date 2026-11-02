@@ -277,7 +277,6 @@ int plat_gamepads(plat_gamepad *out, int max) {
         p->axes[3] = SDL_GameControllerGetAxis(pads[i], SDL_CONTROLLER_AXIS_RIGHTY) / 32767.0f;
         n++;
     }
-    touch_overlay_merge(out,&n,max);
     return n;
 }
 

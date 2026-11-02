@@ -19,6 +19,7 @@ typedef struct {
     pkr_client_mode client_mode;
     bool direct_touch;      // direct game-menu taps; physical controls remain enabled
     bool touch_pad;         // optional native on-screen controller
+    bool touch_pad_always;  // false: original two-second Fade; true: Always
     const char *control;     // optional FIFO path for test commands (see main.c)
     int win_w, win_h;        // window / screen size
     int exit_after_frames;   // 0 = run forever
@@ -97,7 +98,9 @@ typedef struct {
     float buttons[18]; // W3C "standard" layout; 17 = touchpad click (the game's "submit")
 } plat_gamepad;
 bool touch_overlay_event(const plat_event *event);
-void touch_overlay_merge(plat_gamepad *out, int *count, int max);
+void touch_overlay_flush(JSContext *ctx);
+void touch_overlay_reset(void);
+void touch_overlay_set_mask(unsigned mask);
 
 bool plat_init(int w, int h);
 // Starts the audio output thread: it calls mix(out, frames) for interleaved 16-bit stereo at `rate`.
@@ -241,6 +244,11 @@ void overlay_notice_draw(const char *text); // short line over the game (bottom-
 void overlay_blit_text(uint8_t *px, int W, int H, int x, int y, const char *text, int scale, const uint8_t rgba[4]);
 void overlay_image_draw(const uint8_t *rgba, int w, int h, bool changed, int *ox, int *oy);
 void overlay_rgba_at(int slot, const uint8_t *rgba, int w, int h, bool changed, float x, float y, float dw, float dh);
+// Four TL/TR/BL/BR screen x,y,perspective-weight triples. Texture stays on GPU.
+void overlay_rgba_quad(int slot,const uint8_t *rgba,int w,int h,bool changed,const float points[12],float opacity);
+bool overlay_group_begin(int size);
+void overlay_group_end(void);
+void overlay_group_draw(float x,float y,float w,float h,float opacity);
 void gl_game_to_screen(float gx, float gy, float *sx, float *sy, float *scale);
 void host_frame_drawn(void); // screenshots from screens outside the game loop
 int launcher_run(bool offline_ok, const char *offline_version, bool bench_ok, void (*poll)(bool *quit)); // 0 online, 1 offline, 4 benchmark, -1 quit
