@@ -11,7 +11,10 @@
     N.loadScript(f);
   }
   const rt = g.__rt, doc = g.document;
-  if (N.handheldTouch) N.loadScript("handheld-touch.js");
+  if (N.handheldTouch) {
+    N.loadScript("handheld-touch.js");
+    N.loadScript("modal-controls.js");
+  }
   rt.onPhaserLoaded = rt.onPhaserLoaded || []; // shim code that needs Phaser registers here
 
   // Debugging aid (debug builds): <data>/debug.js, if present, runs before the game loads (hooks).
