@@ -170,12 +170,10 @@ void touch_overlay_draw(void) {
         memset(&target, 0, sizeof target);
         last_epoch = g_touch_controls.reset_epoch;
     }
-    if (memcmp(&target, &g_touch_controls.pose, sizeof target)) {
-        from = shown;
-        target = g_touch_controls.pose;
-        pose_start = now;
-        pose_duration = dpad_down() ? 38 : 115;
-    }
+    // Sample the running transition BEFORE accepting another thumb position.
+    // Restarting first makes progress zero on every moving frame, freezing the
+    // artwork until the finger stops. CSS samples the current presentation
+    // before retargeting; keep that behavior at every input/render rate.
     double progress =
         ease((now - pose_start) / (pose_duration ? pose_duration : 1));
 #define LERP(field)                                                            \
@@ -191,6 +189,12 @@ void touch_overlay_draw(void) {
     for (int i = 0; i < 4; i++)
         LERP(light[i]);
 #undef LERP
+    if (memcmp(&target, &g_touch_controls.pose, sizeof target)) {
+        from = shown;
+        target = g_touch_controls.pose;
+        pose_start = now;
+        pose_duration = dpad_down() ? 38 : 115;
+    }
     static uint8_t *layers[TA_LAYERS];
     for (int i = 0; i < TA_LAYERS; i++)
         if (!layers[i])

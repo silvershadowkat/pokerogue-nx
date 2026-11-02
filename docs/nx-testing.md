@@ -2,9 +2,13 @@
 
 Status as of 2026-11-02. 0.2.0-rc1 is the Vita-derived Online/Offline candidate. Earlier 0.1.x results below describe the old bundled-offline test and do not prove the new account path works on Switch.
 
+## 0.2.0-rc4 continuous-motion correction
+
+The maintainer tested RC3 on Retroid and reported that the pad was not smooth or responsive. Investigation reproduced a native renderer bug: every new thumb position restarted the transition at zero progress, preventing visual motion during an uninterrupted slide. RC4 samples the running transition before retargeting. A regression using the actual GLES overlay checks full circular gestures at 30/60/120 Hz, immediate native direction changes and zero D-pad texture uploads. The regression fails on the old renderer and passes after correction. Human feel testing of RC4 remains pending; the input/pose differential tests alone did not establish hardware parity.
+
 ## 0.2.0-rc3 controller checks
 
-The temporary native grid is replaced with the retained SilverShadow controller. Its resolver/pose translation matches 15,045 comparisons against original TypeScript and multi-pointer transition traces. Touch-event, context-mask, scene-cleanup, direct-touch and modal-navigation checks passed. Headless GLES tests exercise the actual native overlay, perspective, opacity, legacy keyboard rendering, neutral-to-slide, action capture, fade/wake and release. Texture upload counting confirms no uploads during D-pad motion after warm-up. This is not a Switch FPS measurement or a human feel check; both target devices still need the new pad tested.
+The temporary native grid is replaced with the retained SilverShadow controller. Its resolver/pose translation matches 15,045 comparisons against original TypeScript and multi-pointer transition traces. Touch-event, context-mask, scene-cleanup, direct-touch and modal-navigation checks passed. Headless GLES tests exercised the actual native overlay, perspective, opacity, legacy keyboard rendering, neutral-to-slide, action capture, fade/wake and release. They confirmed no texture uploads during D-pad motion after warm-up, but missed continuously retargeted animation. The maintainer's subsequent device test found the responsiveness issue documented above. Switch hardware testing remains pending.
 
 ## Maintainer report and 0.2.0-rc2 control fix
 

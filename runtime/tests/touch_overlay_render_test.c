@@ -6,6 +6,7 @@
 #include <EGL/egl.h>
 #include <GLES2/gl2.h>
 #include <assert.h>
+#include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,7 +15,7 @@ extern touch_controls g_touch_controls;
 host_config g_cfg = {
     .app_dir = "work/egl-test", .direct_touch = true, .touch_pad = true};
 static double now = 1000;
-static int uploads, event_count, events[32][2];
+static int uploads, event_count, events[256][2];
 double host_now_ms(void) { return now; }
 void host_log(const char *fmt, ...) {
     va_list a;
@@ -36,7 +37,7 @@ void host_call_rt(JSContext *ctx, const char *name, int argc,
                   JSValueConst *argv) {
     (void)ctx;
     assert(!strcmp(name, "onTouchControl") && argc == 2);
-    assert(event_count < 32);
+    assert(event_count < 256);
     events[event_count][0] = JS_VALUE_GET_INT(argv[0]);
     events[event_count++][1] = JS_VALUE_GET_INT(argv[1]);
 }
@@ -56,6 +57,33 @@ static void draw(void) {
     glClear(GL_COLOR_BUFFER_BIT);
     touch_overlay_draw();
     assert(glGetError() == GL_NO_ERROR);
+}
+static unsigned frame_hash(void) {
+    unsigned char pixels[432 * 432 * 4];
+    glReadPixels(0, 0, 432, 432, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    unsigned hash = 2166136261u;
+    for (size_t i = 0; i < sizeof pixels; i++)
+        hash = (hash ^ pixels[i]) * 16777619u;
+    return hash;
+}
+static void continuous_slide(float cx, float cy, double step_ms) {
+    // A real thumb never waits for the transition to finish between updates.
+    // Check rendered pixels, not just the correct target pose/resolver output.
+    for (int i = 0; i < 72; i++) {
+        double angle = -.5 + i * (6.283185307179586 / 72);
+        unsigned before = frame_hash();
+        now += step_ms;
+        assert(pointer(PEV_POINTER_MOVE, 1, cx + 145 * cos(angle),
+                       cy + 145 * sin(angle)));
+        int direction = tc_resolve(145 * cos(angle), 145 * sin(angle),
+                                   g_touch_controls.dpad.w * .84);
+        assert(g_touch_controls.dpad_button == direction);
+        assert(g_touch_controls.buttons[direction]);
+        draw();
+        if (i > 1)
+            assert(frame_hash() != before &&
+                   "Continuous thumb motion must advance the displayed pose");
+    }
 }
 static void png(void) {
     unsigned char *pixels = malloc(1280 * 960 * 4),
@@ -136,6 +164,10 @@ int main(void) {
     draw();
     assert(uploads == 2);
     png();
+    continuous_slide(cx, cy, 1000.0 / 120);
+    continuous_slide(cx, cy, 1000.0 / 60);
+    continuous_slide(cx, cy, 1000.0 / 30);
+    assert(uploads == 2);
     assert(pointer(PEV_POINTER_MOVE, 2, 600, 100));
     assert(g_touch_controls.buttons[0]);
     assert(pointer(PEV_POINTER_UP, 2, 600, 100));
@@ -146,13 +178,13 @@ int main(void) {
     touch_overlay_active(true);
     draw();
     assert(!pointer(PEV_POINTER_DOWN, 3, 600, 200));
-    now = 5000;
+    now += 3000;
     draw();
     assert(touch_overlay_visible());
     assert(!pointer(PEV_POINTER_UP, 3, 600, 200));
-    now = 7200;
+    now += 2200;
     draw();
-    now = 7400;
+    now += 200;
     draw();
     assert(!touch_overlay_visible());
     assert(pointer(PEV_POINTER_DOWN, 4, cx, cy));
@@ -166,7 +198,8 @@ int main(void) {
     eglDestroyContext(display, ctx);
     eglDestroySurface(display, surface);
     eglTerminate(display);
-    puts("PASS: native ES2 controller, neutral-to-slide, ordered events, zero "
+    puts("PASS: native ES2 controller, uninterrupted circular slides at "
+         "30/60/120 Hz, neutral-to-slide, ordered events, zero "
          "texture uploads during D-pad movement, action capture, fade/wake and "
          "lifecycle release");
     return 0;

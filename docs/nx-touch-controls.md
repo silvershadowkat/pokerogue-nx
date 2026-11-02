@@ -35,6 +35,10 @@ The launcher cycles **Touch pad: Off / Fade / Always**. Fade hides after two sec
 
 ## Verification and remaining device work
 
+The maintainer's RC3 device test found that continuous sliding felt unresponsive. RC4 fixes a native animation timing bug: a new target restarted interpolation before sampling the running transition, so movement every frame froze the displayed pose until the finger stopped. The renderer now advances the existing transition before accepting the next target, preserving the original 38/115 ms timings. The original input resolver, ownership, repeat rate and artwork remain unchanged.
+
+A new actual-GLES regression moves one captured finger around a complete circle at 30, 60 and 120 updates per second without stopping or lifting. It checks that displayed pixels continue changing, direction state updates immediately, and no control textures upload while moving. The continuous-motion assertion fails with the RC3 renderer and passes with the fix. This diagnoses visual responsiveness; the maintainer still needs to judge the corrected pad's feel on hardware.
+
 Differential tests compare 15,045 native resolver/pose cases and ordered multi-pointer traces with the retained original TypeScript. Tests also cover touch-event repeat/mapping, contextual controls, scene cleanup, 4:3 layout, the native GLES shader, group opacity, fade/wake and lifecycle release. The native renderer test confirms zero texture uploads while sliding/rocking after warm-up. Headless Mesa checks are functional graphics checks, not Switch performance evidence.
 
 The original browser Move Touch Controls editor/saved layouts and native haptics are not integrated in this candidate. The native client currently uses the original default geometry/material with context-sensitive groups. It still needs a real Retroid/Switch thumb-slide and feel check before claiming hardware parity.

@@ -23,7 +23,7 @@ config = target / 'config.txt'
 # A staging directory may be reused; never overwrite a user's settings or saves.
 if not config.exists():
     config.write_text('audio=1\nlog=1\nosk=1\ndirecttouch=1\ntouchpad=0\n', encoding='utf8')
-(args.output / 'READ-ME.txt').write_text('''PokeRogue NX 0.2.0-rc3 - Switch candidate
+(args.output / 'READ-ME.txt').write_text('''PokeRogue NX 0.2.0-rc4 - Switch candidate
 Copy the switch folder to the SD root. Do not delete existing saves.
 Use full application mode (hold R while launching a game to enter hbmenu).
 Launch switch/pokerogue-nx/pokerogue-nx.nro. Applet mode is not supported.
@@ -49,7 +49,7 @@ AI assisted coding/testing. No AI-generated game assets were added.
 ''',encoding='utf8')
 with nro.open('rb') as f:
     digest = hashlib.file_digest(f,'sha256').hexdigest()
-manifest = {'version':'0.2.0-rc3','sourceCommit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=root,text=True).strip(),
+manifest = {'version':'0.2.0-rc4','sourceCommit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=root,text=True).strip(),
             'upstreamRuntime':subprocess.check_output(['git','rev-parse','upstream/main'],cwd=root,text=True).strip(),
             'files':[{'path':str(nro.relative_to(args.output)).replace('\\','/'),'bytes':nro.stat().st_size,'sha256':digest}],
             'bundledGame':False,'switchHardwareTested':False}
