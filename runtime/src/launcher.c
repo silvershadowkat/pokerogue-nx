@@ -137,7 +137,7 @@ static void render(int sel,const int *modes,int n,bool offline_ok,const char *ve
         char label[80];snprintf(label,sizeof label,"%s: %s",toggles[i].label,value);
         text(52+i*TOG_W,TOG_Y,label,24,false,sel==n+i);
     }
-    centered(TOG_Y+35,"PokeRogue NX 0.2.0-rc3",18,true);
+    centered(TOG_Y+35,"PokeRogue NX 0.2.0-rc4",18,true);
     plutovg_canvas_destroy(canvas);canvas=NULL;plutovg_surface_destroy(surface);
     plutovg_convert_argb_to_rgba(image,image,W,H,W*4);
 }
