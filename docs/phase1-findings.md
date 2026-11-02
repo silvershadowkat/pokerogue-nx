@@ -1191,3 +1191,102 @@ tests/phaser checks both (pixels in a frame; the skipped objects in the render l
 a 0.99-alpha cover). Where a pixel centre falls exactly on a texel edge (a scale such as 1.25),
 float rounding may pick the other texel for a smaller quad; PokeRogue draws 3 pixels per texel.
 The gacha's slow reactions are not explained yet: the log had no samples (the profiler was off).
+
+### 1.2 on the console (log170, 1.2, 2026-10-30)
+Online, 9 minutes (Town, Metropolis, Graveyard, then the egg gacha), profiler on. The owner: the egg gacha
+went from slow to react to "super responsive". GPU per frame in battles is now 14-19 ms (Metropolis,
+Graveyard; logs 150 and 154 had 22-38 ms on other maps), so JS (25-33 ms at the median) is what sets the
+frame rate now. The egg gacha at the end: 50-60 fps, GPU 10-18 ms, JS 10-19 ms (log167: ~25 fps, GPU
+38-40 ms). Party screen openings reported as slow frames (over 250 ms): 4, at 252-289 ms (log150: 13
+in 13 minutes, 298-333 ms); the rest stayed under the report's threshold. Slow frames left are the
+game's own work: a move animation's first use (populateMoveAnim, 300-575 ms), wave saves (saveAll's
+JSON.stringify, ~300 ms), loading sprite atlases (Phaser's JSONArray parsing), screen setup.
+
+### Versions (owner's scheme, 2026-10-30; runtime 1.0.2)
+Releases are major.minor; the dev builds between them are major.minor.N on top of the last release,
+and the next release collects them. The dev builds published as "1.1" (the connection dialog) and
+"1.2" (trimmed quads, covered objects) are 1.0.1 and 1.0.2; this entry's build is 1.0.2 by name. The
+next release is 1.1. The LiveArea version has two numbers only, so 1.0.N shows 01.00 there.
+
+### 1.0.2's full session (log171, 1.0.2 dev "1.2", 2026-10-30; runtime 1.0.3)
+The whole session behind log170 (17 minutes, online: Town, Metropolis, Graveyard, egg gacha). No errors
+or hangs. Battles 28-40 fps: JS 25-33 ms a frame at the median, GPU 15-20 ms, so JS sets the rate.
+The profiler's 12 battle reports, averaged: Phaser's render JS 21%, tweens 20%, PokeRogue's sprite
+pipelines 16% (FieldSprite's onBind alone 6% of samples), input and frame events 8%. The cover search
+(js/fastpath.js part 20) took 5% of the samples (findCover 3.1%, covers 2.3%), though on the desktop a
+search of a battle's ~190 objects takes 0.055 ms, so most of that is the sampler's bias toward JS loops.
+1.0.3: searched every 30 frames instead of 8, and what can't change between searches (type, pipeline,
+frame and its opacity) is judged once per object and frame.
+
+### Four of the review's findings (review-2026-10.md 3, 4, 5, 9; runtime 1.0.4)
+- Renderbuffer leak (3): Phaser's WebGLFramebufferWrapper.destroy deletes what
+  getFramebufferAttachmentParameter(..., OBJECT_NAME) returns; the native call answered a number, so
+  every destroyed render target left its depth/stencil renderbuffer behind (and deleted its texture
+  only through the texture's own wrapper). js/webgl.js now records each framebuffer's attachments and
+  answers with the objects (or null). Deleted GL objects are dead in gl.c (id 0, as in WebGL), so the
+  texture's second delete can't hit a texture that got its name meanwhile, and is*() answers false for
+  them (vitaGL's glIsTexture(0) says yes). tests/phaser checks that a destroyed framebuffer frees both.
+- Disk cache cleaning (4): `<data>/http-cache/` kept every file forever, and each game release adds
+  newly named chunks. A cached file read again gets its modification time set to now (at most once a
+  week per file: utime, no data written; not the unversioned fonts, whose age decides refetching).
+  Once a week (`http-cache/cleaned` marks the last pass) the cache thread deletes files unused for 60
+  days, one of the 256 folders at a time while idle, from two minutes after launch, paced like the
+  old cache's removal. Desktop: a 90-day-old file and a 2-day-old .tmp deleted, a fresh one kept; an
+  online start marked all 808 files it read.
+- Missing shader compiler (5): the app closed back to LiveArea with the reason only in the log. It now
+  shows the reason and how to install libshacccg.suprx, drawn into a display buffer with the 8x8 font
+  (vitaGL can't start without the compiler), until a button press or 120 s (config.txt fatal_wait;
+  0: not shown). Vita3K 4201 crashes on its own side presenting a display buffer without libgxm (main
+  RAM or video RAM alike), so its boot check sets fatal_wait=0; on the console it is still to be seen.
+- Download check (9): a downloaded offline game replaced the installed one unchecked (a resume answered
+  416 counts as complete). Its size must now be the release's and it must open as a zip with files;
+  otherwise it is deleted, the installed game stays, and a message says to try again. Not run end to
+  end here (this session can't reach GitHub's API for that repository).
+
+### A session across sleep mode (logs 173-174, 1.0.2 dev "1.2", 2026-10-31)
+Online, the app put to sleep at the title (t=200 s; the app's clock stops while the Vita sleeps) and
+played on after waking, all in the Graveyard; profiler off. The owner felt it got slower. JS per frame
+follows what is on screen, not the time played: grouped by draw calls per frame (t=260-565 s), 13-18
+calls: 22-27 ms at the median; 19-24: 30-37 ms; 26-32: 41-48 ms (more sprites: double and trainer
+battles). Windows late in the session with 16-18 calls (t=460-476 s) ran at 22-24 ms, as fast as the
+first battles after waking. Memory as usual for a run (JS after collections 44 -> 64 MB, GPU textures
+55-64 MB, canvases 735 -> 843), no network errors after waking. So no slowdown over time; what costs
+is per sprite (each Pokémon sprite is drawn with its own pipeline bind and flush).
+
+### 1.0.4 on the console (logs 175-184, 2026-10-31 to 11-01; runtime 1.0.5)
+Seven online sessions on 1.0.4 (three with the profiler: logs 177/178, 180, 181), Town, Graveyard and
+Abyss. No errors, no connection losses, collections as before (one after a wave save, 1.6 s).
+- The cover search is gone from the profiles (log171: findCover + covers 5.4% of battle samples; logs
+  178 and 181: under the top 20).
+- The disk cache's first weekly pass ran: 3,160 files, none unused for 60 days (the cache is weeks old),
+  9.6 s of work spread over idle time.
+- Battles: JS at the median 22-34 ms depending on what is on screen, as in logs 171 and 174 (by draw
+  calls a frame: 13-18 calls 21-27 ms, 19-22 calls 27-34 ms, 23 or more 31-38 ms). The Abyss sessions
+  (181, 182) were the slowest at 19-22 calls (32-34 ms against 27 in log171's Graveyard and Metropolis);
+  no sign of a change from 1.0.3-1.0.4's code (log178, also 1.0.4: 22 ms at 13-18 calls).
+- The profiles put 6-8.5% of battle samples in FieldSpritePipeline.onBind, 2% in Arena.isOutside and
+  2-3% in Array.map, though the "arena uniforms once per frame" and "arena tints per frame" rules
+  applied (the [gamefix] line), so those run once a frame. They are the first JS after a pipeline
+  flush (a GL draw in C): the sampler takes its sample at the next interrupt check, so native time
+  just before tends to land on them. Read per-function shares near native work with care.
+- Logs 182-184 stop without a last line (182 in a battle, 183 and 184 at the title). Quitting with
+  START + SELECT wrote nothing, so such an end couldn't be told from closing the app in LiveArea or
+  a crash. 1.0.5 logs "[app] quit (START + SELECT)", and the cache pass also logs the size it keeps.
+
+### PokeRogue's sprite pipelines (desktop, Temple battle, game of 2026-11-01; runtime 1.0.6)
+Timed directly (wall clock; the sampler puts native time before a function on that function):
+render ~1.1 ms a frame on the desktop. The Pokémon pipeline's onBind is 9 us a sprite in a loop
+(5 of them its ~13 uniform calls, 4 the game's JS; the field part via super.onBind 0.5 us);
+hiding the three Pokémon sprites (front, back, substitute) saves 0.15-0.2 ms a frame, 50-70 us a
+sprite with its pipeline switches, onBatch, batchQuad and its own draw. Those are spread out; no
+one piece is large, and each sprite needs its own uniforms and draw.
+The field pipeline drew each arena sprite separately: FieldSpritePipeline.onBatch flushes after
+every sprite. In a Temple battle that is 5 draws a frame (backdrop, four ground layers), and the
+four layers have the same uniforms (terrainColorRatio 1). Rule "arena sprites drawn together"
+(src/gamefix.c): the field pipeline leaves its sprites batched, and a bind that sets other values
+flushes first (added to "arena uniforms once per frame"); Phaser flushes on a pipeline switch and
+at the frame's end. Not for the Pokémon pipeline, which extends the field pipeline and calls the
+same onBatch. Temple: 5 -> 2 field draws a frame, screenshots identical (animations paused,
+batching switched off and on by the pipeline's name), render 1.17 -> 1.13 ms on the desktop.
+tests/smoke checks that each sprite is drawn with the uniforms it was bound with, in fewer draws,
+and that the Pokémon pipeline keeps its draw per sprite.
