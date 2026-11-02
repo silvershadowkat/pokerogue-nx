@@ -9,7 +9,11 @@
     try{
       const battle=watched?.scene?.getScene('battle'),ui=battle?.ui;
       if(!ui||ui.mode===35||ui.visible===false||!battle.sys?.isActive?.())return;
-      if(!ui.getHandler?.()?.active)return;
+      const handler=ui.getHandler?.();
+      if(!handler?.active)return;
+      // MESSAGE exists before login/title setup finishes. An empty message is
+      // still a blank screen; a visible welcome/dialogue is ready for input.
+      if(ui.mode===0&&(!handler.message?.text?.trim?.()||handler.message.visible===false))return;
       finished=true;
       watched.events.off('postrender',rendered);
       const index=rt.frameHooks.indexOf(observe);

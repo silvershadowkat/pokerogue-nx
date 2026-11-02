@@ -20,6 +20,9 @@ battle.ui.mode=1;battle.ui.visible=false;
 first.events.emit('postrender');assert.equal(calls,0);
 battle.ui.visible=true;battle.ui.getHandler=()=>({active:false});
 first.events.emit('postrender');assert.equal(calls,0);
+battle.ui.mode=0;battle.ui.getHandler=()=>({active:true,message:{text:'',visible:true}});
+first.events.emit('postrender');assert.equal(calls,0,'An empty MESSAGE handler is still a blank startup frame');
+battle.ui.mode=1;
 battle.ui.getHandler=()=>{throw Error('UI still constructing');};
 first.events.emit('postrender');assert.equal(calls,0);
 const second=game();rt.renderer.game=second;frame();
@@ -31,4 +34,13 @@ second.events.emit('postrender');assert.equal(calls,1);
 assert.equal(second.events.listenerCount('postrender'),0);
 assert.equal(rt.frameHooks.length,0);
 second.events.emit('postrender');frame();assert.equal(calls,1);
+let welcomeCalls=0;
+const welcomeRT={frameHooks:[]},welcomeEvents=new EventEmitter();
+const welcome={active:true,message:{text:'Welcome',visible:false}};
+welcomeRT.renderer={game:{events:welcomeEvents,scene:{getScene:()=>({
+  sys:{isActive:()=>true},ui:{mode:0,visible:true,getHandler:()=>welcome}
+})}}};
+vm.runInNewContext(source,{__rt:welcomeRT,__native:{startupReady(){welcomeCalls++;}}});
+welcomeRT.frameHooks[0]();welcomeEvents.emit('postrender');assert.equal(welcomeCalls,0);
+welcome.message.visible=true;welcomeEvents.emit('postrender');assert.equal(welcomeCalls,1,'Visible welcome dialogue must release controls before the title screen');
 console.log('PASS: loading feedback survives renderer creation, asynchronous/partial/hidden/loading scenes; ends once after rendered active UI and cleans listeners');
