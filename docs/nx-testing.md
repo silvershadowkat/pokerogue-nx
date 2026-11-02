@@ -2,6 +2,14 @@
 
 Status as of 2026-11-02. 0.2.0-rc1 is the Vita-derived Online/Offline candidate. Earlier 0.1.x results below describe the old bundled-offline test and do not prove the new account path works on Switch.
 
+## Maintainer report and 0.2.0-rc2 control fix
+
+On 2026-11-02 the maintainer reported successful Android official-account login, starting an authenticated Daily Run matching the website, and successfully refreshing stale local account data from the server. These establish login/Daily/server-download behavior, not yet a verified upload/close/reopen round trip. Switch account testing remains pending.
+
+The maintainer also found the upstream Login/Register modal had no D-pad navigation, and Login still required a screen tap after password entry. 0.2.0-rc2 adds focus navigation and confirmation through the existing modal callbacks, including fields, Login/Register, Back and final Login. Host regression checks cover these sequences and animation/overlay guards. No credential values are read by this navigation adapter; the original form still handles authentication.
+
+The optional touch pad had been left enabled during development device testing. Fresh-install defaults remain Touch pad Off, Tap menus On. Existing preferences are preserved; select Touch pad Off in the selector to hide it. Physical controls work without this overlay.
+
 ## 0.2.0-rc1 checks
 
 - Both Switch AArch64 NRO and non-debuggable signed Android ARM64 APK cross-builds passed during development. Final artifact hashes are recorded with staged deliverables.

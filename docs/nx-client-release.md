@@ -1,4 +1,4 @@
-# 0.2.0-rc1 release checks
+# Client release checks
 
 This candidate follows the Vita-derived client route. The separate full C++ rewrite is preserved elsewhere and is not part of these builds. The upstream runtime merge is recorded as a normal merge commit so future Vita changes can be reviewed and integrated with Git.
 
@@ -24,7 +24,7 @@ Native mode capabilities control account network access and file imports. Profil
 
 These restrictions do not make a user-controlled executable tamper-proof. Server validation remains the authority for online saves. No custom authentication bypass or trusted-client assertion is added.
 
-Username/password entry uses the official game's login request through verified HTTPS. Native password display is masked; the test keyboard path does not log initial input contents. Account credentials have not been submitted during automated testing. External-provider OAuth flows are not yet verified on either device.
+Username/password entry uses the official game's login request through verified HTTPS. Native password display is masked; the test keyboard path does not log initial input contents. Account credentials have not been submitted during automated testing. The maintainer has since reported successful Android login, authenticated Daily Run and server-save refresh. External-provider OAuth flows are not yet verified on either device.
 
 ## Updates and pending work
 

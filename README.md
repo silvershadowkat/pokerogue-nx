@@ -6,7 +6,7 @@ krappaU’s native runtime, QuickJS integration, browser APIs, GPU rendering, au
 
 ## Modes
 
-- **Online:** loads live pokerogue.net, including its normal account login and server APIs. Authenticated cloud-save and Daily Run verification on Switch is still pending. No cheats, developer evaluation channel, or save-file import.
+- **Online:** loads live pokerogue.net, including its normal account login and server APIs. Android login, authenticated Daily Run and server-save refresh have been reported working by the maintainer; Switch verification and full save round-trip testing remain pending. No cheats, developer evaluation channel, or save-file import.
 - **Offline:** downloads the normal offline distribution used by [Admiral-Billy’s app](https://github.com/Admiral-Billy/Pokerogue-App) when requested. Plays directly from one `game.zip`, without extracting tens of thousands of files. No account-server access or cheats.
 - **Debug:** visible but unavailable in 0.2.0-rc2. Isolated SilverShadow cheats, enhancements and custom modes are planned. No minigames or Google Drive integration in this release.
 
