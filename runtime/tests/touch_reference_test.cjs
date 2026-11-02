@@ -3,9 +3,9 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),cp=require('node:child_process');
 const ts=require('typescript');
 const provenance=JSON.parse(fs.readFileSync('runtime/tests/reference/silvershadow-provenance.json','utf8'));
-for(const [name,hash] of Object.entries(provenance.files)){
+for(const [name,hash] of Object.entries(provenance.normalizedFiles)){
   const source=fs.readFileSync('runtime/tests/reference/'+name);
-  const original=source.subarray(source.indexOf(10)+1);
+  const original=source.subarray(source.indexOf(10)+1).toString('utf8').replace(/\r\n/g,'\n');
   assert.equal(require('node:crypto').createHash('sha256').update(original).digest('hex'),hash,'Original controller fixture changed: '+name);
 }
 const driver=process.env.PKR_TOUCH_REFERENCE_DRIVER||require('node:path').resolve('runtime/build-tests/touch-reference-driver');
