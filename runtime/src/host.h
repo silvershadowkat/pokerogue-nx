@@ -235,6 +235,10 @@ void audio_memory(size_t *pcm, size_t *mp3, int *active_voices);
 // Status messages drawn before the game takes over the screen (overlay.c).
 void overlay_set(const char *msg);
 void overlay_present(const char *msg); // draw + swap immediately (main thread is about to block)
+void startup_loading_begin(void);
+void startup_loading_ready(void);
+bool startup_loading_active(void);
+void startup_loading_draw(bool clear);
 bool overlay_draw(void);
 void overlay_disable(void);
 bool overlay_active(void);

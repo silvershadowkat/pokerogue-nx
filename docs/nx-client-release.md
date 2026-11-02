@@ -34,9 +34,9 @@ On 2026-11-02 a fresh fetch confirmed that Vita `main` still points to `ea0d7d41
 
 RC6 uses the recoverable writer for compiled modules and `bytecode/startup.txt`, preventing stale `.tmp` index files caused by Switch rename-over-existing behavior. Failed index updates retry. This is independent of the RC5 clock/save correction. The on-device cleanup validates the pending index and referenced cache files before promoting it, with a private backup of the original; user profiles and settings are preserved.
 
-## Current cloud-save blocker
+## Cloud-save correction and confirmed round trip
 
-RC4 Switch login/server download worked, but the server rejected its save upload because the runtime returned fractional `Date.now()` timestamps. RC5 restores integer browser timestamps in `runtime/js/core.js`; the actual-shim regression reproduces the reported value and passes after correction. This is a runtime compatibility fix; authentication, official game save rules and server validation are unchanged. Cloud save success must be reverified from a freshly reloaded browser before release.
+RC4 Switch login/server download worked, but the server rejected its save upload because the runtime returned fractional `Date.now()` timestamps. RC5 restores integer browser timestamps in `runtime/js/core.js`; the actual-shim regression reproduces the reported value and passes after correction. This is a runtime compatibility fix; authentication, official game save rules and server validation are unchanged. On 2026-11-02 the maintainer confirmed Switch-to-PC upload/reopen, PC-to-Switch upload/reopen and automatic server refresh. This specific cloud-save blocker is cleared; remaining hardware checks still apply.
 
 Online game Settings remain stock. Touch settings stay in the native selector, default to Fade on fresh RC5 installations, and remain device-local. Existing choices are preserved. Contextual shortcut coverage/labels, multi-aspect-ratio layout checks, touch-layout editing and haptics remain follow-up work.
 
@@ -46,4 +46,4 @@ Online automatically retrieves the live entry point and manifest, reusing versio
 
 Runtime/app update notifications are not implemented; install updated APK/NRO releases manually. Cached launcher assets are reused locally. Debug, custom modes, a redesigned cheats menu and one-way account export workflow testing are follow-up work.
 
-Before calling the release stable, a person must confirm Switch login, server save/reload and authenticated Daily Run; then repeat offline creation/update/save/reopen. Android login, authenticated Daily and server-data refresh are maintainer-confirmed; save upload/close/reopen remains pending. Device performance and long-session stability remain hardware checks, not build results.
+Switch login and bidirectional server save/reload are maintainer-confirmed. Before calling the release stable, confirm Switch authenticated Daily, then repeat offline creation/update/save/reopen. Android login, authenticated Daily and server-data refresh are maintainer-confirmed; save upload/close/reopen remains pending. Device performance and long-session stability remain hardware checks, not build results.

@@ -12,6 +12,7 @@
   }
   const rt = g.__rt, doc = g.document;
   if (N.handheldTouch) {
+    N.loadScript("startup-loading.js");
     N.loadScript("handheld-touch.js");
     N.loadScript("modal-controls.js");
     N.loadScript("touch-events.js");

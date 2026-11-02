@@ -2,6 +2,14 @@
 
 Status as of 2026-11-02. 0.2.0-rc1 is the Vita-derived Online/Offline candidate. Earlier 0.1.x results below describe the old bundled-offline test and do not prove the new account path works on Switch.
 
+## 0.2.0-rc7: startup loading feedback and save acceptance
+
+The maintainer confirmed the complete Switch/PC online save round trip: a newer PC save loaded automatically on Switch; Switch progress through wave 8 then appeared on PC; another PC battle/save loaded correctly on Switch again. The final RC6 log contains integer system/session timestamps and no save rejection. This establishes user-confirmed bidirectional cloud-save behavior, including stock cache refresh, after the RC4 malformed cached copy was replaced by newer server data. No manual cache reset or savedata rewriting was performed.
+
+The remaining startup black gap occurs after Phaser creates its renderer (which disables the initial native status overlay), before a game UI has rendered. RC7 adds a small animated Loading label using the already cached Emerald font, with a bitmap fallback if unavailable. It remains inside the game viewport across 16:9, 4:3 and wide-phone layouts and disappears after a rendered active game UI. Native touch controls stay hidden during this initial gap. The adapter only observes postrender/UI state; it changes no game scenes, account data, inputs or rules. Long startup frames use black with the same label instead of the older centered busy screen.
+
+Host checks cover partial/hidden/inactive/loading UI, renderer replacement, first-render readiness and listener cleanup. Actual GLES tests verify viewport placement, transparency, visibility, cached uploads between animation ticks and disappearance when ready across three aspect ratios. These are functional rendering checks; Switch loading-gap appearance still needs a human check.
+
 ## 0.2.0-rc6: Switch cache replacement
 
 An RC4 SD audit found a newer `bytecode/startup.txt.tmp` left beside an older startup index. The writer used `rename(tmp,path)` directly, which cannot overwrite on Switch, and ignored the failure. RC6 routes both module-cache writes and startup-index updates through the recoverable replacement writer. Failed index writes remain dirty and retry after the quiet interval. Small `.bak` cache files are intentional recovery copies.

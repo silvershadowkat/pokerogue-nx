@@ -448,7 +448,7 @@ static void control_poll(JSContext *ctx, bool *quit) {
 
 const char *host_version_string(void) {
 #if defined(__SWITCH__) || defined(__ANDROID__)
-    return "PokeRogue NX 0.2.0-rc6 | Vita runtime " PKR_VERSION " (" PKR_COMMIT ")";
+    return "PokeRogue NX 0.2.0-rc7 | Vita runtime " PKR_VERSION " (" PKR_COMMIT ")";
 #else
     return "PokeRogue Native " PKR_VERSION PKR_FLAVOR " (" PKR_COMMIT ")";
 #endif
@@ -685,10 +685,11 @@ static void toggle_fps_lock(void) {
 static void draw_over_game(JSContext *ctx, double js_ms) {
     int pre_total, pre_left = gl_precompile_left(&pre_total);
     bool show_notice = host_now_ms() < notice_until;
-    if (!osk_active() && !link_active() && !g_cfg.hud && !fields_draw_pending() && !pre_left && !show_notice && !touch_overlay_visible()) return;
+    if (!osk_active() && !link_active() && !g_cfg.hud && !fields_draw_pending() && !pre_left && !show_notice && !touch_overlay_visible() && !startup_loading_active()) return;
     host_call_rt(ctx, "beforeExternalGL", 0, NULL);
     fields_draw();
     touch_overlay_draw();
+    if (startup_loading_active() && !pre_left) startup_loading_draw(false);
     osk_draw();
     link_draw();
     if (g_cfg.hud) draw_hud(ctx, js_ms);
@@ -787,7 +788,8 @@ static void busy_poll(void) {
     if (pre_left) snprintf(text, sizeof text, "%s\n\nPreparing shaders %d/%d", dots[tick % 4], pre_total - pre_left, pre_total);
     else snprintf(text, sizeof text, "%s", dots[tick % 4]);
     tick++;
-    overlay_busy_draw(text);
+    if (startup_loading_active()) startup_loading_draw(true);
+    else overlay_busy_draw(text);
     plat_swap();
     gl_restore_state();
     // The game is busy anyway: a good time to build shader variants (gl.c, which leaves the GL
@@ -1258,6 +1260,9 @@ int main(int argc, char **argv) {
         host_log("[local] offline game from %s (game version %s): no login, saves stay on this console", g_cfg.local_dir, ver);
     }
     else host_log("[online] playing %s", g_cfg.base_url);
+#if defined(__SWITCH__) || defined(__ANDROID__)
+    startup_loading_begin();
+#endif
     JSContext *ctx = host_js_init();
     if (!ctx) return 1;
     g_ctx_for_mem = ctx;
@@ -1297,7 +1302,7 @@ int main(int argc, char **argv) {
     apply_fps_lock();
     double next = host_now_ms();
     while (!quit) {
-        touch_overlay_active(!osk_active() && !link_active());
+        touch_overlay_active(!osk_active() && !link_active() && !startup_loading_active());
         plat_event ev;
         while (plat_poll_event(&ev)) {
             if (ev.type == PEV_QUIT) {

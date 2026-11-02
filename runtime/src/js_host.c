@@ -1209,7 +1209,12 @@ static JSValue n_dev_send_bench_log(JSContext *ctx, JSValueConst this_val, int a
 }
 #endif
 
+static JSValue n_startup_ready(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
+    startup_loading_ready();
+    return JS_UNDEFINED;
+}
 static const JSCFunctionListEntry native_funcs[] = {
+    JS_CFUNC_DEF("startupReady", 0, n_startup_ready),
     JS_CFUNC_DEF("randomBytes", 1, n_random_bytes),
     JS_CFUNC_DEF("showLink", 2, n_show_link),
     JS_CFUNC_DEF("notice", 1, n_notice),
