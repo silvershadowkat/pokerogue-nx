@@ -88,13 +88,15 @@
       if (!r) return;
       const el = imeTarget;
       imeTarget = null;
-      if (!r.ok) return;
+      if (!r.ok) { rt.onFormTextComplete?.(el, null, false); return; }
       el.value = r.text;
       el.dispatchEvent(new Event("input", { bubbles: true }));
       el.dispatchEvent(new Event("change", { bubbles: true }));
       const all = g.document.querySelectorAll("input");
       const next = all[all.indexOf(el) + 1];
-      if (next && next.type === "password" && !next.readOnly) g.setTimeout(() => next.focus(), 0);
+      const nextPassword = next && next.type === "password" && !next.readOnly ? next : null;
+      rt.onFormTextComplete?.(el, nextPassword, true);
+      if (nextPassword) g.setTimeout(() => nextPassword.focus(), 0);
       return;
     }
     const el = g.document.activeElement;

@@ -211,7 +211,7 @@ static char *module_normalize(JSContext *ctx, const char *base, const char *name
 #define BYTECODE_SALT "pkr-bytecode-3" // -3: Phaser's chunk with its source (see bytecode_write_flags)
 // gamefix.c's rewrites are in the compiled code: a new set of them (or gamefix=0) must not find code
 // compiled with another. Bump with every change to its FIXES.
-#define GAMEFIX_SALT "gamefix-7"
+#define GAMEFIX_SALT "gamefix-8"
 #define BYTECODE_EXT ".qbc3"
 
 // Phaser's chunk keeps its source: js/fastpath.js installs each native fast path only after
@@ -284,20 +284,14 @@ static void bytecode_cleanup(void) {
 
 // Writes a compiled module (any thread). Returns false if the file couldn't be written.
 bool module_bytecode_write(const char *path, const void *bc, size_t blen) {
-    char dir[600], tmp[720];
+    char dir[600];
     snprintf(dir, sizeof dir, "%s/bytecode", g_cfg.data_dir);
 #ifdef __vita__
     mkdir(dir, 0777);
 #else
     mkdir(dir, 0755);
 #endif
-    snprintf(tmp, sizeof tmp, "%s.tmp", path);
-    FILE *f = fopen(tmp, "wb");
-    bool ok = f && fwrite(bc, 1, blen, f) == blen;
-    if (f) ok &= fclose(f) == 0;
-    if (ok) ok = rename(tmp, path) == 0;
-    if (!ok) remove(tmp);
-    return ok;
+    return storage_write_file(path, bc, blen);
 }
 
 static void bytecode_save(JSContext *ctx, JSValueConst fn, const char *path, int flags) {
@@ -438,19 +432,18 @@ static void bytecode_note_loaded(const char *path) {
 void module_list_flush(void) {
     if (!bc_list_dirty || host_now_ms() - bc_list_t < 3000) return;
     bc_list_dirty = false;
-    char path[700], tmp[720], text[BC_MAX * 710];
+    char path[700], text[BC_MAX * 710];
     size_t o = 0;
     pthread_mutex_lock(&bc_lock);
     for (int i = 0; i < bc_loaded_n; i++) o += snprintf(text + o, sizeof text - o, "%s\n", bc_loaded[i]);
     pthread_mutex_unlock(&bc_lock);
     snprintf(path, sizeof path, "%s/bytecode/startup.txt", g_cfg.data_dir);
-    snprintf(tmp, sizeof tmp, "%s.tmp", path);
-    FILE *f = fopen(tmp, "wb");
-    if (!f) return;
-    bool ok = fwrite(text, 1, o, f) == o;
-    ok &= fclose(f) == 0;
-    if (ok) rename(tmp, path);
-    else remove(tmp);
+    // Switch SD rename cannot replace an existing file. Use the same verified
+    // replacement/backup writer as local storage, and retry a failed update.
+    if (!storage_write_file(path, text, o)) {
+        bc_list_dirty = true;
+        bc_list_t = host_now_ms();
+    }
 }
 
 // ---- the module loader. JS_ReadObject loads a module's imports from inside (nested calls), so the
@@ -1053,6 +1046,12 @@ static JSValue n_show_link(JSContext *ctx, JSValueConst this_val, int argc, JSVa
 }
 
 // notice(text): a message over the game until a button is pressed (dialogs.c)
+static JSValue n_reset_touch(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
+    touch_overlay_reset();return JS_UNDEFINED;
+}
+static JSValue n_touch_mask(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
+    uint32_t mask=0;JS_ToUint32(ctx,&mask,argv[0]);touch_overlay_set_mask(mask);return JS_UNDEFINED;
+}
 static JSValue n_notice(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
     const char *t = JS_ToCString(ctx, argv[0]);
     if (t) dialog_notice(t);
@@ -1062,6 +1061,8 @@ static JSValue n_notice(JSContext *ctx, JSValueConst this_val, int argc, JSValue
 
 // pickFile(title, relDir, extensions): file picker over the game on <data>/relDir (dialogs.c)
 static JSValue n_pick_file(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
+    if (!client_can_import(g_cfg.client_mode))
+        return JS_ThrowTypeError(ctx, "Save import is unavailable in official online mode");
 #ifdef __ANDROID__
     JNIEnv *env = SDL_AndroidGetJNIEnv();
     jobject activity = SDL_AndroidGetActivity();
@@ -1088,6 +1089,7 @@ static JSValue n_pick_file(JSContext *ctx, JSValueConst this_val, int argc, JSVa
 
 // pickPoll() -> undefined (nothing yet) | null (cancelled) | [name, ArrayBuffer]
 static JSValue n_pick_poll(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
+    if (!client_can_import(g_cfg.client_mode)) return JS_NULL;
 #ifdef __ANDROID__
     JNIEnv *env = SDL_AndroidGetJNIEnv();
     jobject activity = SDL_AndroidGetActivity();
@@ -1153,12 +1155,14 @@ static JSValue n_export_document(JSContext *ctx, JSValueConst this_val, int argc
     JNIEnv *env = SDL_AndroidGetJNIEnv();
     jobject activity = SDL_AndroidGetActivity();
     jclass cls = (*env)->GetObjectClass(env, activity);
-    jmethodID method = (*env)->GetMethodID(env, cls, "exportSaveDocument", "(Ljava/lang/String;)V");
+    jmethodID method = (*env)->GetMethodID(env, cls, "exportSaveDocument", "(Ljava/lang/String;Ljava/lang/String;)V");
     jstring filename = (*env)->NewStringUTF(env, name);
-    if (method && filename) (*env)->CallVoidMethod(env, activity, method, filename);
+    jstring profile = (*env)->NewStringUTF(env, client_mode_name(g_cfg.client_mode));
+    if (method && filename && profile) (*env)->CallVoidMethod(env, activity, method, filename, profile);
     bool failed = (*env)->ExceptionCheck(env);
     if (failed) (*env)->ExceptionClear(env);
     if (filename) (*env)->DeleteLocalRef(env, filename);
+    if (profile) (*env)->DeleteLocalRef(env, profile);
     (*env)->DeleteLocalRef(env, cls);
     (*env)->DeleteLocalRef(env, activity);
     JS_FreeCString(ctx, name);
@@ -1205,10 +1209,17 @@ static JSValue n_dev_send_bench_log(JSContext *ctx, JSValueConst this_val, int a
 }
 #endif
 
+static JSValue n_startup_ready(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
+    startup_loading_ready();
+    return JS_UNDEFINED;
+}
 static const JSCFunctionListEntry native_funcs[] = {
+    JS_CFUNC_DEF("startupReady", 0, n_startup_ready),
     JS_CFUNC_DEF("randomBytes", 1, n_random_bytes),
     JS_CFUNC_DEF("showLink", 2, n_show_link),
     JS_CFUNC_DEF("notice", 1, n_notice),
+    JS_CFUNC_DEF("resetTouchControls", 0, n_reset_touch),
+    JS_CFUNC_DEF("setTouchControlsMask", 1, n_touch_mask),
     JS_CFUNC_DEF("pickFile", 3, n_pick_file),
 #ifdef __ANDROID__
     JS_CFUNC_DEF("exportDocument", 1, n_export_document),
@@ -1263,11 +1274,15 @@ JSContext *host_js_init(void) {
     JS_SetPropertyStr(ctx, native, "devSendBenchLog", JS_NewCFunction(ctx, n_dev_send_bench_log, "devSendBenchLog", 0));
 #endif
     JS_SetPropertyStr(ctx, native, "baseURL", JS_NewString(ctx, g_cfg.base_url));
+    JS_SetPropertyStr(ctx, native, "clientMode", JS_NewString(ctx, client_mode_name(g_cfg.client_mode)));
+    JS_SetPropertyStr(ctx, native, "allowSaveImport", JS_NewBool(ctx, client_can_import(g_cfg.client_mode)));
+    JS_SetPropertyStr(ctx, native, "directTouch", JS_NewBool(ctx, g_cfg.direct_touch));
 #ifdef __SWITCH__
     JS_SetPropertyStr(ctx, native, "storageBackupRecovery", JS_TRUE);
 #endif
     JS_SetPropertyStr(ctx, native, "jsDir", JS_NewString(ctx, g_cfg.js_dir));
     JS_SetPropertyStr(ctx, native, "dataDir", JS_NewString(ctx, g_cfg.data_dir));
+    JS_SetPropertyStr(ctx, native, "appDir", JS_NewString(ctx, g_cfg.app_dir));
 #ifdef PKR_DEBUG
     JS_SetPropertyStr(ctx, native, "debug", JS_TRUE); // debug build: debug.js, the probes' hooks
     JS_SetPropertyStr(ctx, native, "plainShaders", JS_NewBool(ctx, g_cfg.plain_shaders)); // js/webgl.js
@@ -1280,7 +1295,7 @@ JSContext *host_js_init(void) {
     JS_SetPropertyStr(ctx, native, "probeScripts", JS_FALSE);
 #endif
     JS_SetPropertyStr(ctx, native, "screenWidth", JS_NewInt32(ctx, g_cfg.win_w));
-#ifdef __ANDROID__
+#if defined(__ANDROID__) || defined(__SWITCH__)
     JS_SetPropertyStr(ctx, native, "handheldTouch", JS_TRUE);
 #endif
     JS_SetPropertyStr(ctx, native, "screenHeight", JS_NewInt32(ctx, g_cfg.win_h));

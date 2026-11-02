@@ -14,6 +14,8 @@
 #include <time.h>
 
 #include "host.h"
+#include "miniz.h"
+#include "storage_file.h"
 
 #define RELEASE_API "https://api.github.com/repos/Admiral-Billy/pokerogue/releases/latest"
 #define ASSET_NAME "game.zip"
@@ -30,7 +32,7 @@ static bool cancel_pressed(void) {
     plat_event ev;
     bool cancel = false;
     while (plat_poll_event(&ev))
-        if (ev.type == PEV_QUIT || (ev.type == PEV_KEY_DOWN && ev.key && !strcmp(ev.key, "Escape"))) cancel = true;
+        if (ev.type == PEV_QUIT || ev.type == PEV_POINTER_DOWN || (ev.type == PEV_KEY_DOWN && ev.key && !strcmp(ev.key, "Escape"))) cancel = true;
     plat_gamepad pad;
     if (plat_gamepads(&pad, 1) > 0 && pad.buttons[1] > 0.5f) cancel = true;
     return cancel;
@@ -52,10 +54,10 @@ static bool show_progress(long long done, long long total, void *ud) {
         snprintf(eta, sizeof eta, ", about %d:%02d left", secs / 60, secs % 60);
     }
     if (total > 0)
-        snprintf(msg, sizeof msg, "%s\n\n%.0f of %.0f MB (%.1f MB/s%s)\n\nPress O to cancel. A cancelled download\ncontinues where it stopped next time.",
+        snprintf(msg, sizeof msg, "%s\n\n%.0f of %.0f MB (%.1f MB/s%s)\n\nTap the screen or press the cancel button to pause.\nThe download continues where it stopped next time.",
                  p->what, done / 1048576.0, total / 1048576.0, p->speed / 1048576.0, eta);
     else
-        snprintf(msg, sizeof msg, "%s\n\n%.0f MB\n\nPress O to cancel.", p->what, done / 1048576.0);
+        snprintf(msg, sizeof msg, "%s\n\n%.0f MB\n\nTap the screen or press the cancel button to pause.", p->what, done / 1048576.0);
     overlay_present(msg);
     return !cancel_pressed();
 }
@@ -63,7 +65,7 @@ static bool show_progress(long long done, long long total, void *ud) {
 // Shows a message until a button is pressed (so errors can be read).
 void ui_message_wait(const char *msg) {
     char full[800];
-    snprintf(full, sizeof full, "%s\n\nPress X to go back.", msg);
+    snprintf(full, sizeof full, "%s\n\nTap the screen or press confirm to go back.", msg);
     double t0 = host_now_ms();
     for (;;) {
         overlay_present(full);
@@ -188,12 +190,13 @@ const char *offline_update_available(const char *installed) {
 // Asks a yes/no question: X yes, O no.
 bool ui_confirm(const char *msg) {
     char full[900];
-    snprintf(full, sizeof full, "%s\n\nX: yes      O: no", msg);
+    snprintf(full, sizeof full, "%s\n\nConfirm: yes   Cancel: no\nTouch: left half = yes, right half = no", msg);
     double t0 = host_now_ms();
     for (;;) {
         overlay_present(full);
         plat_event ev;
         while (plat_poll_event(&ev)) {
+            if (ev.type == PEV_POINTER_DOWN && host_now_ms()-t0>500) { int w,h;plat_drawable_size(&w,&h);return ev.x<w/2; }
             if (ev.type == PEV_QUIT || (ev.type == PEV_KEY_DOWN && ev.key && !strcmp(ev.key, "Escape"))) return false;
             if (ev.type == PEV_KEY_DOWN && ev.key && !strcmp(ev.key, "Enter")) return true;
         }
@@ -296,18 +299,37 @@ bool offline_install(void) {
         }
         return false;
     }
-    // Done: the game is played straight from the zip (no unpacking). An older version goes now.
-    remove(game_zip);
-    if (rename(zip_path, game_zip) != 0) {
-        ui_message_wait("Couldn't rename the downloaded file.");
+    // Done: check it before it replaces anything. A download that stopped early, was cut off or
+    // came back damaged (a server answering 416 to the resume of a wrong part counts as complete)
+    // would otherwise replace a working game with one that doesn't open: its size must be the
+    // release's, and it must open as a zip (that reads only the zip's directory at its end).
+    struct stat dl;
+    bool size_ok = stat(zip_path, &dl) == 0 && (size <= 0 || dl.st_size == size);
+    mz_zip_archive z;
+    memset(&z, 0, sizeof z);
+    bool zip_ok = size_ok && mz_zip_reader_init_file(&z, zip_path, 0);
+    unsigned files = zip_ok ? mz_zip_reader_get_num_files(&z) : 0;
+    if (zip_ok) mz_zip_reader_end(&z);
+    if (!size_ok || !zip_ok || !files) {
+        host_log("[offline] downloaded file rejected: %lld bytes (release: %lld), %s", (long long)(size_ok ? dl.st_size : -1),
+                 size, !size_ok ? "wrong size" : !zip_ok ? "not a zip" : "empty zip");
+        remove(zip_path);
+        ui_message_wait("The downloaded file is damaged (wrong size or not a zip)\n"
+                        "and was deleted. The installed game, if any, is kept.\n\nTry the download again.");
+        return false;
+    }
+    host_log("[offline] download checked: %lld bytes, %u files", (long long)dl.st_size, files);
+    // Keep the complete previous archive recoverable on Switch's no-overwrite SD.
+    if (!storage_install_file(zip_path, game_zip)) {
+        ui_message_wait("Couldn't install the downloaded game.\nThe previous version is kept where possible.");
         return false;
     }
     remove(part_tag_path);
-    FILE *vf = fopen(version_path, "w");
-    if (vf) {
-        fputs(strip_tag(tag), vf);
-        fclose(vf);
-    }
+    const char *version=strip_tag(tag);
+    storage_write_file(version_path, version, strlen(version));
+    // The new archive has been installed. Its old copy is no longer needed;
+    // interruption before installation is recovered by offline_installed().
+    char backup[800];snprintf(backup,sizeof backup,"%s.bak",game_zip);remove(backup);
     host_log("[offline] installed release %s as %s", tag, game_zip);
     return true;
 }

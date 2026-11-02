@@ -7,6 +7,7 @@
 #include <stdint.h>
 
 #include "quickjs.h"
+#include "client_modes.h"
 
 // ---------------------------------------------------------------- config
 
@@ -14,6 +15,11 @@ typedef struct {
     const char *base_url;    // page URL the game is loaded from, e.g. https://pokerogue.net/
     const char *js_dir;      // runtime's own JS (bootstrap, DOM shim)
     const char *data_dir;    // writable: HTTP cache, localStorage, cookies
+    const char *app_dir;     // launcher/config/certificate root; profiles are children
+    pkr_client_mode client_mode;
+    bool direct_touch;      // direct game-menu taps; physical controls remain enabled
+    bool touch_pad;         // optional native on-screen controller
+    bool touch_pad_always;  // false: original two-second Fade; true: Always
     const char *control;     // optional FIFO path for test commands (see main.c)
     int win_w, win_h;        // window / screen size
     int exit_after_frames;   // 0 = run forever
@@ -25,6 +31,8 @@ typedef struct {
     int busy_after_ms;       // config.txt busy=<ms>: loading screen during long frames (0: never)
     bool net_trace;          // config.txt nettrace=1: log API request headers
     bool osk;                // always use the built-in keyboard (config.txt osk=1)
+    int fatal_wait;          // config.txt fatal_wait=<s>: how long a start-up error stays without a
+                             // button press (default 120; 0: not shown, as in the Vita3K boot check)
     bool fps30;              // config.txt fps30=1: a frame every other vblank (30 fps), steadier than
                              // 30-45 (start screen toggle; L + R + SQUARE in game)
     bool hud;                // debug line over the game (config.txt hud=1; SELECT while holding L+R)
@@ -46,6 +54,9 @@ typedef struct {
 } host_config;
 
 extern host_config g_cfg;
+void touch_overlay_active(bool enabled);
+bool touch_overlay_visible(void);
+void touch_overlay_draw(void);
 
 // ---------------------------------------------------------------- logging / time
 
@@ -86,6 +97,10 @@ typedef struct {
     float axes[4];
     float buttons[18]; // W3C "standard" layout; 17 = touchpad click (the game's "submit")
 } plat_gamepad;
+bool touch_overlay_event(const plat_event *event);
+void touch_overlay_flush(JSContext *ctx);
+void touch_overlay_reset(void);
+void touch_overlay_set_mask(unsigned mask);
 
 bool plat_init(int w, int h);
 // Starts the audio output thread: it calls mix(out, frames) for interleaved 16-bit stereo at `rate`.
@@ -160,6 +175,7 @@ void url_resolve(const char *base, const char *url, char *out, size_t n);
 // ---------------------------------------------------------------- networking (net.c)
 
 void net_init(void);
+void net_start_workers(void); // after choosing a stable mode/profile
 void net_shutdown(void);
 void host_js_set_interrupt(JSInterruptHandler *cb);
 // Compiled-code cache (js_host.c), used by precompile.c
@@ -219,6 +235,10 @@ void audio_memory(size_t *pcm, size_t *mp3, int *active_voices);
 // Status messages drawn before the game takes over the screen (overlay.c).
 void overlay_set(const char *msg);
 void overlay_present(const char *msg); // draw + swap immediately (main thread is about to block)
+void startup_loading_begin(void);
+void startup_loading_ready(void);
+bool startup_loading_active(void);
+void startup_loading_draw(bool clear);
 bool overlay_draw(void);
 void overlay_disable(void);
 bool overlay_active(void);
@@ -228,6 +248,11 @@ void overlay_notice_draw(const char *text); // short line over the game (bottom-
 void overlay_blit_text(uint8_t *px, int W, int H, int x, int y, const char *text, int scale, const uint8_t rgba[4]);
 void overlay_image_draw(const uint8_t *rgba, int w, int h, bool changed, int *ox, int *oy);
 void overlay_rgba_at(int slot, const uint8_t *rgba, int w, int h, bool changed, float x, float y, float dw, float dh);
+// Four TL/TR/BL/BR screen x,y,perspective-weight triples. Texture stays on GPU.
+void overlay_rgba_quad(int slot,const uint8_t *rgba,int w,int h,bool changed,const float points[12],float opacity);
+bool overlay_group_begin(int size);
+void overlay_group_end(void);
+void overlay_group_draw(float x,float y,float w,float h,float opacity);
 void gl_game_to_screen(float gx, float gy, float *sx, float *sy, float *scale);
 void host_frame_drawn(void); // screenshots from screens outside the game loop
 int launcher_run(bool offline_ok, const char *offline_version, bool bench_ok, void (*poll)(bool *quit)); // 0 online, 1 offline, 4 benchmark, -1 quit

@@ -257,7 +257,12 @@ static void render(void) {
         overlay_blit_text(img, IMG_W, IMG_H, x + (w - tw) / 2, y + (KEY_H - 16) / 2, special[k].label, 2, s ? dark : fg);
     }
     overlay_blit_text(img, IMG_W, IMG_H, MARGIN, TOP + ROWS * KEY_H + 8,
-                      "X type  O del  /\\ space  [] caps  START ok  SELECT back", 1, dim_fg);
+#ifdef __vita__
+                      "X type  O del  /\\ space  [] caps  START ok  SELECT back",
+#else
+                      "A type  B del  Y space  X caps  + OK  - back",
+#endif
+                      1, dim_fg);
 }
 
 bool osk_draw(void) {

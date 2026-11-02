@@ -35,6 +35,10 @@ bool storage_write_file(const char *path, const char *data, size_t len) {
 #endif
     if (fclose(f) != 0 && ok) { ok = false; error = errno; }
     if (!ok) { errno = error; return storage_error("write/flush temporary file", path); }
+    return storage_install_file(tmp, path);
+}
+
+bool storage_install_file(const char *staged, const char *path) {
 #ifdef __SWITCH__
     char backup[1100];
     if (snprintf(backup, sizeof backup, "%s.bak", path) >= sizeof backup) {
@@ -50,13 +54,24 @@ bool storage_write_file(const char *path, const char *data, size_t len) {
         if (remove(backup) != 0 && errno != ENOENT) return storage_error("remove old backup", path);
         if (rename(path, backup) != 0) return storage_error("retain previous save", path);
     }
-    if (rename(tmp, path) != 0) {
+    if (rename(staged, path) != 0) {
         storage_error("install new save", path);
         if (had_previous && rename(backup, path) != 0) storage_error("restore previous save", path);
         return false;
     }
 #else
-    if (rename(tmp, path) != 0) return storage_error("replace save", path);
+    if (rename(staged, path) != 0) return storage_error("replace file", path);
 #endif
+    return true;
+}
+
+bool storage_recover_previous(const char *path) {
+    struct stat st;
+    if (stat(path, &st) == 0) return S_ISREG(st.st_mode);
+    if (errno != ENOENT) return false;
+    char backup[1100];
+    if (snprintf(backup, sizeof backup, "%s.bak", path) >= sizeof backup) return false;
+    if (stat(backup, &st) != 0 || !S_ISREG(st.st_mode)) return false;
+    if (rename(backup, path) != 0) return storage_error("recover previous file", path);
     return true;
 }

@@ -27,7 +27,10 @@ static char message[2048];
 static bool disabled;
 static textbox msg_box, footer_box, hud_box, busy_box, notice_box;
 static GLuint prog, vbo;
-static GLint a_pos, a_uv, u_tex;
+static GLint a_pos, a_uv, u_tex, u_opacity, u_unpremultiply;
+static GLuint group_texture,group_framebuffer;
+static int group_size;
+static bool group_active;
 
 void overlay_set(const char *msg) {
     if (disabled) return;
@@ -136,10 +139,10 @@ static GLuint compile(GLenum type, const char *src) {
 
 static bool init_gl(void) {
     if (prog) return true;
-    static const char *vs = "attribute vec2 aPos; attribute vec2 aUV; varying vec2 vUV;\n"
-                            "void main() { vUV = aUV; gl_Position = vec4(aPos, 0.0, 1.0); }\n";
-    static const char *fs = "precision mediump float; varying vec2 vUV; uniform sampler2D uTex;\n"
-                            "void main() { gl_FragColor = texture2D(uTex, vUV); }\n";
+    static const char *vs = "attribute vec4 aPos; attribute vec2 aUV; varying vec2 vUV;\n"
+                            "void main() { vUV = aUV; gl_Position = aPos; }\n";
+    static const char *fs = "precision mediump float; varying vec2 vUV; uniform sampler2D uTex; uniform float uOpacity; uniform float uUnpremultiply;\n"
+                            "void main() { vec4 c=texture2D(uTex,vUV); vec3 rgb=mix(c.rgb,c.rgb/max(c.a,0.00392157),uUnpremultiply); gl_FragColor=vec4(rgb,c.a*uOpacity); }\n";
     prog = glCreateProgram();
     glAttachShader(prog, compile(GL_VERTEX_SHADER, vs));
     glAttachShader(prog, compile(GL_FRAGMENT_SHADER, fs));
@@ -149,6 +152,8 @@ static bool init_gl(void) {
     a_pos = 0;
     a_uv = 1;
     u_tex = glGetUniformLocation(prog, "uTex");
+    u_opacity = glGetUniformLocation(prog, "uOpacity");
+    u_unpremultiply = glGetUniformLocation(prog, "uUnpremultiply");
     glGenBuffers(1, &vbo);
     return true;
 }
@@ -167,15 +172,17 @@ static void draw_box(const textbox *tb, int x, int y, int sw, int sh) {
 
 static void begin_draw(int *w, int *h) {
     init_gl();
-    plat_drawable_size(w, h);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    if(group_active)*w=*h=group_size;else plat_drawable_size(w, h);
+    glBindFramebuffer(GL_FRAMEBUFFER, group_active?group_framebuffer:0);
     glViewport(0, 0, *w, *h);
     glDisable(GL_SCISSOR_TEST);
     glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,GL_ONE,GL_ONE_MINUS_SRC_ALPHA);
     glUseProgram(prog);
     glActiveTexture(GL_TEXTURE0);
     glUniform1i(u_tex, 0);
+    glUniform1f(u_opacity, 1);
+    glUniform1f(u_unpremultiply,0);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glEnableVertexAttribArray(a_pos);
     glEnableVertexAttribArray(a_uv);
@@ -289,18 +296,55 @@ void overlay_image_draw(const uint8_t *rgba, int iw, int ih, bool changed, int *
 // Draws an RGBA image stretched over a screen rectangle (text of the game's input fields).
 // Each `slot` keeps its own texture; `changed` re-uploads the pixels.
 void overlay_rgba_at(int slot, const uint8_t *rgba, int iw, int ih, bool changed, float x, float y, float w, float h) {
-    static GLuint tex[8];
-    if (slot < 0 || slot >= 8) return;
+    const float p[12]={x,y,1,x+w,y,1,x,y+h,1,x+w,y+h,1};
+    overlay_rgba_quad(slot,rgba,iw,ih,changed,p,1);
+}
+
+void overlay_rgba_quad(int slot,const uint8_t *rgba,int iw,int ih,bool changed,const float p[12],float opacity) {
+    static GLuint tex[32];
+    if (slot < 0 || slot >= 32) return;
     int sw, sh;
     begin_draw(&sw, &sh);
     if (changed || !tex[slot]) upload(&tex[slot], rgba, iw, ih);
-    float x0 = 2.0f * x / sw - 1, x1 = 2.0f * (x + w) / sw - 1;
-    float y0 = 1 - 2.0f * y / sh, y1 = 1 - 2.0f * (y + h) / sh;
-    float quad[] = {x0, y1, 0, 1, x1, y1, 1, 1, x0, y0, 0, 0, x1, y0, 1, 0};
+    glUniform1f(u_opacity,opacity);
     glBindTexture(GL_TEXTURE_2D, tex[slot]);
+    float quad[24];
+    for(int i=0;i<4;i++){
+        int source=i^2; // retain the old overlay's counter-clockwise winding
+        float weight=p[source*3+2];
+        quad[i*6]=(2*p[source*3]/sw-1)*weight;
+        quad[i*6+1]=(1-2*p[source*3+1]/sh)*weight;
+        quad[i*6+2]=0;quad[i*6+3]=weight;
+        quad[i*6+4]=(float)(source&1);quad[i*6+5]=(float)(source>>1);
+    }
     glBufferData(GL_ARRAY_BUFFER, sizeof quad, quad, GL_STREAM_DRAW);
-    glVertexAttribPointer(a_pos, 2, GL_FLOAT, GL_FALSE, 16, (void *)0);
-    glVertexAttribPointer(a_uv, 2, GL_FLOAT, GL_FALSE, 16, (void *)8);
+    glVertexAttribPointer(a_pos, 4, GL_FLOAT, GL_FALSE, 24, (void *)0);
+    glVertexAttribPointer(a_uv, 2, GL_FLOAT, GL_FALSE, 24, (void *)16);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     end_draw();
+}
+
+bool overlay_group_begin(int size){
+    if(!group_texture)glGenTextures(1,&group_texture);
+    if(!group_framebuffer)glGenFramebuffers(1,&group_framebuffer);
+    if(group_size!=size){
+        glActiveTexture(GL_TEXTURE0);upload(&group_texture,NULL,size,size);group_size=size;
+        glBindFramebuffer(GL_FRAMEBUFFER,group_framebuffer);
+        glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,group_texture,0);
+        if(glCheckFramebufferStatus(GL_FRAMEBUFFER)!=GL_FRAMEBUFFER_COMPLETE){group_size=0;glBindFramebuffer(GL_FRAMEBUFFER,0);host_log("[touch] controller framebuffer incomplete");return false;}
+    }
+    group_active=true;glBindFramebuffer(GL_FRAMEBUFFER,group_framebuffer);glViewport(0,0,size,size);
+    glDisable(GL_SCISSOR_TEST);glClearColor(0,0,0,0);glClear(GL_COLOR_BUFFER_BIT);return true;
+}
+void overlay_group_end(void){group_active=false;glBindFramebuffer(GL_FRAMEBUFFER,0);}
+void overlay_group_draw(float x,float y,float w,float h,float opacity){
+    if(!group_texture)return;
+    int sw,sh;begin_draw(&sw,&sh);
+    glUniform1f(u_opacity,opacity);glUniform1f(u_unpremultiply,1);
+    // FBO texture coordinates are vertically opposite to CPU-uploaded images.
+    float x0=2*x/sw-1,x1=2*(x+w)/sw-1,y0=1-2*y/sh,y1=1-2*(y+h)/sh;
+    float vertices[]={x0,y1,0,0,x1,y1,1,0,x0,y0,0,1,x1,y0,1,1};
+    glBindTexture(GL_TEXTURE_2D,group_texture);glBufferData(GL_ARRAY_BUFFER,sizeof vertices,vertices,GL_STREAM_DRAW);
+    glVertexAttribPointer(a_pos,2,GL_FLOAT,GL_FALSE,16,(void*)0);glVertexAttribPointer(a_uv,2,GL_FLOAT,GL_FALSE,16,(void*)8);
+    glDrawArrays(GL_TRIANGLE_STRIP,0,4);end_draw();
 }

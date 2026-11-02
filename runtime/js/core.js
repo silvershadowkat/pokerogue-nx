@@ -67,7 +67,10 @@
   // The console's clock can be hours off; once a server has told the real time (net.c), "now"
   // is corrected by the difference. Dates built from explicit values are unchanged.
   const RealDate = Date;
-  const nowMs = () => RealDate.now() + N.clockOffset();
+  // Date.now() returns integer milliseconds, even when the native clock offset
+  // includes microseconds. Fractional values are rejected by the save API's
+  // integer timestamp fields. Match new Date(value)'s truncation semantics.
+  const nowMs = () => Math.trunc(RealDate.now() + N.clockOffset());
   // No rest parameters: `new Date()` runs thousands of times while some screens are built
   // (PokeRogue's event checks), and spreading arguments is slow in QuickJS.
   function PDate(a, b, c, d, e, f, h) {

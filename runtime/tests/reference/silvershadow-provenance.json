@@ -1,0 +1,14 @@
+{
+  "repository": "https://github.com/silvershadowkat/pokerogue-offline",
+  "referenceCommit": "878335241e98f034a1c46bcb4cabffa039cfb397",
+  "scope": "Only independent touchscreen controller math/state and vector paths; no cheats/game/minigames",
+  "files": {
+    "silvershadow-touch-input.ts": "e18bbe7018c490e21dcddfe9a42e6bce10dd4d61772ae2ea6a521f0c8214454b",
+    "silvershadow-dpad-visual.ts": "fec3a70acd959919c17f8fa0bef62b25ad485af2723c2ae370c7f984fe60b059"
+  },
+  "integrationPatchSha256": "f71fe064f5e204df066bf32cbb842624a368615a96ee02d46ea1ec975fd9d1b3",
+  "normalizedFiles": {
+    "silvershadow-touch-input.ts": "c11186beaa669878cf6074aa8d46a36076c9e912ffdd2ad5a65e8f35998c26e2",
+    "silvershadow-dpad-visual.ts": "2d968efced933189e0b1927acb60f7fd4c6d5eeb2d93322100f19a889774e995"
+  }
+}

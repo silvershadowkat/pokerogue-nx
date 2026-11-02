@@ -39,6 +39,15 @@ function regions():Region[] {
   };
   const select=(index:number)=>{h.setCursor(index); ui.processInput(Button.ACTION);};
   if (h.tutorialActive) return result;
+  // Modal forms use pointer callbacks rather than the menu cursor API. Reuse
+  // those upstream callbacks so login validation and account requests stay upstream.
+  if (visible(h.modalContainer) && h.buttonBgs?.length) {
+    h.inputs?.forEach((o:View,i:number)=>add(h.inputContainers[i],`Input ${i+1}`,()=>o.setFocus(),0));
+    h.buttonBgs.forEach((o:View,i:number)=>add(o,h.buttonLabels[i]?.text ?? `Button ${i+1}`,()=>{
+      if(globalScene.tweens.getTweensOf(h.modalContainer).length===0) o.emit("pointerdown");
+    },3));
+    return result;
+  }
   h.tabMenu?.headerTitles?.forEach((o:View,i:number)=>add(o,o.text,()=>{
     h.tabMenu.setIndex(i);h.tabMenu.onChangeCallback(i);
   },8));

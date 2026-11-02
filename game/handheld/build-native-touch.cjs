@@ -26,10 +26,10 @@ __rt.frameHooks.push(()=>{
     return {x:(e.clientX-(size.width-canvas.width*scale)/2)/scale,
       y:(e.clientY-(size.height-canvas.height*scale)/2)/scale};
   };
-  canvas.addEventListener('pointerdown',(e:any)=>{down={...point(e),mode:scene.ui.mode};});
+  canvas.addEventListener('pointerdown',(e:any)=>{if(__native.directTouch!==false)down={...point(e),mode:scene.ui.mode,id:e.pointerId};});
   canvas.addEventListener('pointercancel',()=>{down=null;});
   canvas.addEventListener('pointerup',(e:any)=>{
-    if(!down)return;
+    if(!down||down.id!==e.pointerId)return;
     const p=point(e),start=down;down=null;
     if(start.mode!==scene.ui.mode)return;
     const dx=p.x-start.x,dy=p.y-start.y;

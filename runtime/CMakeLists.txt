@@ -29,7 +29,8 @@ target_include_directories(plutovg PUBLIC third_party/plutovg/include)
 target_compile_definitions(plutovg PUBLIC PLUTOVG_BUILD_STATIC PRIVATE PLUTOVG_DISABLE_FONT_FACE_CACHE_LOAD)
 target_compile_options(plutovg PRIVATE -w)
 
-# Version: runtime/VERSION ("0.18"); the build scripts pass the git commit as PKR_COMMIT.
+# Version: runtime/VERSION, "1.1" for a release, "1.0.2" for a dev build after release 1.0 (see
+# docs/development.md "Versions"); the build scripts pass the git commit as PKR_COMMIT.
 file(STRINGS VERSION PKR_VERSION LIMIT_COUNT 1)
 set(PKR_TITLE_ID PKRV00001)
 # Dev build (scripts/build_vita.sh with PKR_DEV=1): adds src/devtools.c,
@@ -38,11 +39,12 @@ option(PKR_DEV "dev build: test builds from the dev-build release, log upload to
 if(NOT PKR_COMMIT)
   set(PKR_COMMIT unknown)
 endif()
-string(REGEX MATCH "^([0-9]+)\\.([0-9]+)$" _v "${PKR_VERSION}")
+string(REGEX MATCH "^([0-9]+)\\.([0-9]+)(\\.[0-9]+)?$" _v "${PKR_VERSION}")
 if(NOT _v)
-  message(FATAL_ERROR "VERSION must look like 0.18, got '${PKR_VERSION}'")
+  message(FATAL_ERROR "VERSION must look like 1.1 or 1.0.2, got '${PKR_VERSION}'")
 endif()
-# LiveArea/package version: two digits each, "00.18".
+# LiveArea/package version: two digits each, "01.01". It has no third number: dev builds 1.0.N show
+# their release's 01.00 there (the app's own screens and log show the whole version).
 math(EXPR _major "${CMAKE_MATCH_1}")
 math(EXPR _minor "${CMAKE_MATCH_2}")
 if(_major LESS 10)
@@ -61,7 +63,7 @@ target_include_directories(qrcodegen PUBLIC third_party/qrcodegen)
 target_compile_definitions(miniz PUBLIC MINIZ_NO_TIME)  # changes struct layouts: users must agree
 target_compile_options(miniz PRIVATE -w)
 
-set(RT_SRC src/main.c src/js_host.c src/storage_file.c src/precompile.c src/gamefix.c src/net.c src/gl.c src/canvas2d.c src/fastpath.c src/overlay.c src/osk.c src/profiler.c src/launcher.c src/offline_install.c src/audio.c src/audio_m4a.c src/savecrypt.c src/dialogs.c)
+set(RT_SRC src/main.c src/client_modes.c src/js_host.c src/storage_file.c src/precompile.c src/gamefix.c src/net.c src/gl.c src/canvas2d.c src/fastpath.c src/overlay.c src/startup_loading.c src/touch_controls.c src/touch_art.c src/touch_overlay.c src/osk.c src/profiler.c src/launcher.c src/offline_install.c src/audio.c src/audio_m4a.c src/savecrypt.c src/dialogs.c)
 if(PKR_DEV)
   list(APPEND RT_SRC src/devtools.c)
   set(PKR_VPK_SUFFIX -dev)
@@ -160,14 +162,19 @@ elseif(NINTENDO_SWITCH)
     PkgConfig::SDL2 PkgConfig::CURL mbedtls mbedx509 mbedcrypto
     GLESv2 EGL glapi drm_nouveau z stdc++ pthread nx m)
   file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/romfs/js")
+  if(NOT PKR_DEBUG)
+    file(REMOVE "${CMAKE_CURRENT_BINARY_DIR}/romfs/js/debug.js")
+  endif()
   file(GLOB SWITCH_JS CONFIGURE_DEPENDS js/*.js)
   foreach(f ${SWITCH_JS})
     get_filename_component(n ${f} NAME)
-    configure_file(${f} "${CMAKE_CURRENT_BINARY_DIR}/romfs/js/${n}" COPYONLY)
+    if(NOT n STREQUAL "debug.js" OR PKR_DEBUG)
+      configure_file(${f} "${CMAKE_CURRENT_BINARY_DIR}/romfs/js/${n}" COPYONLY)
+    endif()
   endforeach()
   configure_file(third_party/cacert.pem "${CMAKE_CURRENT_BINARY_DIR}/romfs/cacert.pem" COPYONLY)
-  nx_generate_nacp(OUTPUT handheld.nacp NAME "PokeRogue Native Test" AUTHOR "SilverShadow / contributors" VERSION "0.1.0")
-  nx_create_nro(pokerogue-rt OUTPUT "pokerogue-native-test.nro" NACP handheld.nacp ROMFS "${CMAKE_CURRENT_BINARY_DIR}/romfs")
+  nx_generate_nacp(OUTPUT handheld.nacp NAME "PokeRogue NX" AUTHOR "SilverShadow / krappaU" VERSION "0.2.0")
+  nx_create_nro(pokerogue-rt OUTPUT "pokerogue-nx.nro" NACP handheld.nacp ROMFS "${CMAKE_CURRENT_BINARY_DIR}/romfs")
 elseif(ANDROID)
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
   set_target_properties(quickjs plutovg miniz qrcodegen PROPERTIES POSITION_INDEPENDENT_CODE ON)
@@ -214,7 +221,7 @@ else()
 endif()
 
 target_compile_definitions(pokerogue-rt PRIVATE PKR_VERSION="${PKR_VERSION}" PKR_COMMIT="${PKR_COMMIT}" PKR_TITLE_ID="${PKR_TITLE_ID}")
-option(PKR_OFFLINE_TEST "Use only the bundled offline game for the hardware test" ${NINTENDO_SWITCH})
+option(PKR_OFFLINE_TEST "Use only the bundled offline game for the hardware test" OFF)
 if(PKR_OFFLINE_TEST)
   target_compile_definitions(pokerogue-rt PRIVATE PKR_OFFLINE_TEST=1)
 endif()

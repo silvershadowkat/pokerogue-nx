@@ -11,7 +11,12 @@
     N.loadScript(f);
   }
   const rt = g.__rt, doc = g.document;
-  if (N.handheldTouch) N.loadScript("handheld-touch.js");
+  if (N.handheldTouch) {
+    N.loadScript("startup-loading.js");
+    N.loadScript("handheld-touch.js");
+    N.loadScript("modal-controls.js");
+    N.loadScript("touch-events.js");
+  }
   rt.onPhaserLoaded = rt.onPhaserLoaded || []; // shim code that needs Phaser registers here
 
   // Debugging aid (debug builds): <data>/debug.js, if present, runs before the game loads (hooks).
@@ -238,6 +243,6 @@
     const net = /fetch|resolve|connect|SSL|timed? ?out/i.test(String(e));
     N.showMessage("PokeRogue could not start\n\n" + String(e).replace(/^TypeError: /, "") + "\n\n" +
       (net ? "Check that Wi-Fi is connected, then restart the app.\n\n" : "") +
-      "Log: ux0:data/pokerogue/log.txt\nPress START + SELECT to quit.");
+      "Log: " + (N.appDir || N.dataDir) + "/log.txt\nClose and reopen the app to try again.");
   });
 })(globalThis);

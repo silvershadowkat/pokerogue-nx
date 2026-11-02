@@ -1,4 +1,4 @@
-package com.silvershadow.pokerogue.nativehandheld;
+package com.silvershadow.pokeroguenx;
 
 import android.app.Activity;
 import android.content.Intent;
@@ -40,12 +40,14 @@ final class SaveDocuments {
         return value; // null: pending; empty: cancelled; otherwise [name, bytes].
     }
 
-    void requestExport(String name) {
+    void requestExport(String name, String profile) {
         activity.runOnUiThread(() -> {
             if (busy) { message("Finish the current file operation first."); return; }
             // The game supplies a filename, never an arbitrary filesystem path.
             if (name.isEmpty() || name.contains("/") || name.contains("\\") || name.equals("..")) return;
-            File source = new File(new File(activity.getFilesDir(), "exports"), name);
+            if (!profile.equals("online") && !profile.equals("offline") && !profile.equals("debug")) return;
+            File profileRoot = new File(activity.getFilesDir(), "profiles/" + profile);
+            File source = new File(new File(profileRoot, "exports"), name);
             if (!source.isFile()) { message("The save export could not be prepared."); return; }
             busy = true;
             pendingExport = source;

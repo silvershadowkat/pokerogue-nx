@@ -113,6 +113,16 @@ function regions() {
     const select = (index) => { h.setCursor(index); ui.processInput(Button.ACTION); };
     if (h.tutorialActive)
         return result;
+    // Modal forms use pointer callbacks rather than the menu cursor API. Reuse
+    // those upstream callbacks so login validation and account requests stay upstream.
+    if (visible(h.modalContainer) && h.buttonBgs?.length) {
+        h.inputs?.forEach((o, i) => add(h.inputContainers[i], `Input ${i + 1}`, () => o.setFocus(), 0));
+        h.buttonBgs.forEach((o, i) => add(o, h.buttonLabels[i]?.text ?? `Button ${i + 1}`, () => {
+            if (globalScene.tweens.getTweensOf(h.modalContainer).length === 0)
+                o.emit("pointerdown");
+        }, 3));
+        return result;
+    }
     h.tabMenu?.headerTitles?.forEach((o, i) => add(o, o.text, () => {
         h.tabMenu.setIndex(i);
         h.tabMenu.onChangeCallback(i);
@@ -229,10 +239,11 @@ __rt.frameHooks.push(() => {
         return { x: (e.clientX - (size.width - canvas.width * scale) / 2) / scale,
             y: (e.clientY - (size.height - canvas.height * scale) / 2) / scale };
     };
-    canvas.addEventListener('pointerdown', (e) => { down = { ...point(e), mode: scene.ui.mode }; });
+    canvas.addEventListener('pointerdown', (e) => { if (__native.directTouch !== false)
+        down = { ...point(e), mode: scene.ui.mode, id: e.pointerId }; });
     canvas.addEventListener('pointercancel', () => { down = null; });
     canvas.addEventListener('pointerup', (e) => {
-        if (!down)
+        if (!down || down.id !== e.pointerId)
             return;
         const p = point(e), start = down;
         down = null;

@@ -1,4 +1,4 @@
-package com.silvershadow.pokerogue.nativehandheld;
+package com.silvershadow.pokeroguenx;
 
 import android.app.Activity;
 import android.os.Bundle;

@@ -183,6 +183,9 @@ bool plat_poll_event(plat_event *ev) {
         case SDL_QUIT:
             ev->type = PEV_QUIT;
             return true;
+        case SDL_WINDOWEVENT:
+            if(e.window.event==SDL_WINDOWEVENT_FOCUS_LOST)touch_overlay_active(false);
+            continue;
         case SDL_KEYDOWN:
         case SDL_KEYUP:
             if (!map_key(e.key.keysym.sym, ev)) continue;
@@ -190,11 +193,15 @@ bool plat_poll_event(plat_event *ev) {
             return true;
         case SDL_MOUSEBUTTONDOWN:
         case SDL_MOUSEBUTTONUP:
+            if(e.button.which==SDL_TOUCH_MOUSEID)continue;
+            ev->pointer_id=-1;
             ev->type = e.type == SDL_MOUSEBUTTONDOWN ? PEV_POINTER_DOWN : PEV_POINTER_UP;
             ev->x = e.button.x;
             ev->y = e.button.y;
             return true;
         case SDL_MOUSEMOTION:
+            if(e.motion.which==SDL_TOUCH_MOUSEID)continue;
+            ev->pointer_id=-1;
             ev->type = PEV_POINTER_MOVE;
             ev->x = e.motion.x;
             ev->y = e.motion.y;
@@ -208,6 +215,7 @@ bool plat_poll_event(plat_event *ev) {
                        e.type == SDL_FINGERUP ? PEV_POINTER_UP : PEV_POINTER_MOVE;
             ev->x = e.tfinger.x * w;
             ev->y = e.tfinger.y * h;
+            ev->pointer_id=(int)(e.tfinger.fingerId&0x7fffffff);
             return true;
         }
         case SDL_CONTROLLERDEVICEADDED:
@@ -286,8 +294,8 @@ static int ime_state;    // 0 none, 1 open, 2 answered, 3 cancelled
 static char ime_text[1024];
 
 bool plat_ime_open(const char *title, const char *initial, int max_len, bool password) {
-    host_log("[ime] open \"%s\" (max %d%s), initial \"%s\" - answer with: ime <text> / ime-cancel", title, max_len,
-             password ? ", password" : "", initial);
+    (void)initial;
+    host_log("[ime] open \"%s\" (max %d%s)", title, max_len, password ? ", password" : "");
     ime_state = 1;
     return true;
 }
@@ -383,7 +391,7 @@ void plat_relaunch(int argc, char **argv) {
     (void)argc;
 #ifdef __SWITCH__
     (void)argv;
-    envSetNextLoad("sdmc:/switch/pokerogue-native-test/pokerogue-native-test.nro", "");
+    envSetNextLoad("sdmc:/switch/pokerogue-nx/pokerogue-nx.nro", "");
     exit(0);
 #elif defined(__ANDROID__)
     (void)argv;
