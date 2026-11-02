@@ -25,10 +25,14 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <time.h>
+#ifdef __ANDROID__
+#include <android/log.h>
+#endif
 
 #include "gles.h"
 
 #include "host.h"
+#include "storage_file.h"
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
@@ -51,7 +55,7 @@ int _newlib_heap_size_user = 256 * 1024 * 1024;
 #endif
 #elif defined(__SWITCH__)
 #define DEFAULT_JS_DIR "romfs:/js"
-#define DEFAULT_DATA_DIR "sdmc:/switch/pokerogue-native-test"
+#define DEFAULT_DATA_DIR "sdmc:/switch/pokerogue-nx"
 #define DEFAULT_CONTROL NULL
 #else
 #define DEFAULT_JS_DIR "js"
@@ -64,6 +68,7 @@ host_config g_cfg = {
     .js_dir = DEFAULT_JS_DIR,
     .data_dir = DEFAULT_DATA_DIR,
     .control = DEFAULT_CONTROL,
+    .direct_touch = true,
 #ifdef __SWITCH__
     .win_w = 1280,
     .win_h = 720,
@@ -105,6 +110,9 @@ static int log_thread_state; // 0: not started, 1: running, -1: couldn't start (
 bool host_logging(void) { return log_fp != NULL; }
 
 static void log_out(const char *p, size_t n) {
+#ifdef __ANDROID__
+    __android_log_print(ANDROID_LOG_INFO,"PokeRogueNX","%.*s",(int)n,p);
+#endif
     fwrite(p, 1, n, stderr);
     if (log_fp) {
         fwrite(p, 1, n, log_fp);
@@ -436,8 +444,8 @@ static void control_poll(JSContext *ctx, bool *quit) {
 #endif
 
 const char *host_version_string(void) {
-#ifdef __SWITCH__
-    return "PokeRogue Native Switch Test 0.1 (" PKR_COMMIT ")";
+#if defined(__SWITCH__) || defined(__ANDROID__)
+    return "PokeRogue NX 0.2.0-rc1 | Vita runtime " PKR_VERSION " (" PKR_COMMIT ")";
 #else
     return "PokeRogue Native " PKR_VERSION PKR_FLAVOR " (" PKR_COMMIT ")";
 #endif
@@ -674,9 +682,10 @@ static void toggle_fps_lock(void) {
 static void draw_over_game(JSContext *ctx, double js_ms) {
     int pre_total, pre_left = gl_precompile_left(&pre_total);
     bool show_notice = host_now_ms() < notice_until;
-    if (!osk_active() && !link_active() && !g_cfg.hud && !fields_draw_pending() && !pre_left && !show_notice) return;
+    if (!osk_active() && !link_active() && !g_cfg.hud && !fields_draw_pending() && !pre_left && !show_notice && !touch_overlay_visible()) return;
     host_call_rt(ctx, "beforeExternalGL", 0, NULL);
     fields_draw();
+    touch_overlay_draw();
     osk_draw();
     link_draw();
     if (g_cfg.hud) draw_hud(ctx, js_ms);
@@ -915,9 +924,11 @@ static bool offline_installed(void) {
         snprintf(probe, sizeof probe, "%s/currentVersion.txt", offline_dir);
     } else {
         snprintf(offline_dir, sizeof offline_dir, "%s/game.zip", g_cfg.data_dir);
+        storage_recover_previous(offline_dir);
         if (!(f = fopen(offline_dir, "rb"))) return false;
         fclose(f);
         snprintf(probe, sizeof probe, "%s/game.zip.version", g_cfg.data_dir);
+        storage_recover_previous(probe);
     }
     if ((f = fopen(probe, "rb"))) {
         size_t n = fread(offline_version, 1, sizeof offline_version - 1, f);
@@ -968,7 +979,7 @@ static void bench_mode(void) {
 // Sets key=value in config.txt (the start screen's toggles), keeping every other line.
 void config_set(const char *key, const char *value) {
     char path[512], tmp[520], line[1100];
-    snprintf(path, sizeof path, "%s/config.txt", g_cfg.data_dir);
+    snprintf(path, sizeof path, "%s/config.txt", g_cfg.app_dir ? g_cfg.app_dir : g_cfg.data_dir);
     snprintf(tmp, sizeof tmp, "%s.tmp", path);
     FILE *in = fopen(path, "r"), *out = fopen(tmp, "w");
     if (!out) {
@@ -990,13 +1001,13 @@ void config_set(const char *key, const char *value) {
     if (!done) fprintf(out, "%s=%s\n", key, value);
     if (in) fclose(in);
     bool ok = fclose(out) == 0;
-    remove(path);
-    if (ok) rename(tmp, path);
+    if (ok) storage_install_file(tmp, path);
 }
 
 static void load_config_file(void) {
     char path[512];
     snprintf(path, sizeof path, "%s/config.txt", g_cfg.data_dir);
+    storage_recover_previous(path);
     FILE *f = fopen(path, "r");
     if (!f) return;
     char line[1100];
@@ -1008,6 +1019,10 @@ static void load_config_file(void) {
         const char *k = line, *v = eq + 1;
         if (!strcmp(k, "log")) {
             g_cfg.log = atoi(v) != 0;
+        } else if (!strcmp(k, "directtouch")) {
+            g_cfg.direct_touch = atoi(v) != 0;
+        } else if (!strcmp(k, "touchpad")) {
+            g_cfg.touch_pad = atoi(v) != 0;
         } else if (!strcmp(k, "gamefix")) {
             g_cfg.no_gamefix = atoi(v) == 0;
 #ifdef PKR_DEBUG
@@ -1092,7 +1107,7 @@ bool g_relaunch;
 static void relaunch(JSContext *ctx, int argc, char **argv) {
     host_call_rt(ctx, "flushStorage", 0, NULL);
     char path[600];
-    snprintf(path, sizeof path, "%s/relaunch.txt", g_cfg.data_dir);
+    snprintf(path, sizeof path, "%s/relaunch.txt", g_cfg.app_dir ? g_cfg.app_dir : g_cfg.data_dir);
     FILE *f = fopen(path, "w");
     if (f) {
         fputs(g_cfg.local_dir ? "offline" : "online", f);
@@ -1155,6 +1170,7 @@ int main(int argc, char **argv) {
     g_cfg.force_online = false;
     g_cfg.control = NULL;
 #endif
+    g_cfg.app_dir = g_cfg.data_dir;
     mkdirs(g_cfg.data_dir);
     char path[512], prev_log[512];
     snprintf(path, sizeof path, "%s/log.txt", g_cfg.data_dir);
@@ -1214,6 +1230,16 @@ int main(int argc, char **argv) {
         g_cfg.local_dir = offline_dir;
         g_cfg.base_url = LOCAL_ORIGIN "/";
     }
+    // No credentials, cookies, saves or compiled game hooks cross modes. The
+    // process is restarted to change mode; the runtime is never reused in place.
+    static char profile_dir[800], profile_cache[850];
+    g_cfg.client_mode=g_cfg.local_dir?PKR_OFFLINE:PKR_ONLINE;
+    if(!client_profile_path(profile_dir,sizeof profile_dir,g_cfg.app_dir,g_cfg.client_mode))return 1;
+    mkdirs(profile_dir);
+    snprintf(profile_cache, sizeof profile_cache, "%s/http-cache", profile_dir);
+    mkdirs(profile_cache);
+    g_cfg.data_dir = profile_dir;
+    net_start_workers();
     net_set_origin(g_cfg.base_url);
     if (g_cfg.local_dir) {
         char vp[700], ver[64] = "?";
@@ -1267,6 +1293,7 @@ int main(int argc, char **argv) {
     apply_fps_lock();
     double next = host_now_ms();
     while (!quit) {
+        touch_overlay_active(!osk_active() && !link_active());
         plat_event ev;
         while (plat_poll_event(&ev)) {
             if (ev.type == PEV_QUIT) {
@@ -1296,6 +1323,7 @@ int main(int argc, char **argv) {
                 continue;
             }
             if (link_event(&ev) || osk_event(&ev)) continue;
+            if (touch_overlay_event(&ev)) continue;
             static const char *names[] = {"keydown", "keyup", "pointerdown", "pointermove", "pointerup"};
             JSValue args[7] = {
                 JS_NewString(ctx, names[ev.type]),

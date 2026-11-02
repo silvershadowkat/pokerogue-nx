@@ -294,7 +294,11 @@
     // and a "change" event.
     click() {
       super.click();
-      if (this.type !== "file" || this.disabled || !N.pickFile) return;
+        if (this.type !== "file" || this.disabled || !N.pickFile) return;
+        if (N.allowSaveImport === false) {
+          g.alert("Save import is unavailable in official online mode. Use offline mode for imported saves.");
+          return;
+        }
       N.pickFile("Import: choose a file from " + N.dataDir + "/" + EXPORT_DIR + "/ (exports from this app go there; " +
         "files can also be copied there with a file manager)", EXPORT_DIR, this.accept);
       const input = this;

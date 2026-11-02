@@ -1,77 +1,42 @@
 # PokeRogue NX
 
-An experimental native Nintendo Switch port of official **PokeRogue**, using a
-purpose-built compatibility layer derived from krappaU's Vita client. Android
-and desktop support are also under development. The native host lives in `runtime/`;
-a pinned official game subtree under `game/` supplies the offline bundle.
+Nintendo Switch and Android adaptation of **[krappaU’s PokeRogue Vita](https://github.com/krappaU/pokerogue-vita)**. One app offers Online and Offline; Debug is reserved for a later release. **No game files or game artwork are bundled in the APK/NRO.**
 
-**Native runtime foundation: [krappaU's PokeRogue Vita](https://github.com/krappaU/pokerogue-vita).**
-This port builds on krappaU's substantial work on the native host, QuickJS
-integration, browser API compatibility, rendering, and audio. It is an adaptation
-of that project, not a native runtime written from scratch here.
+krappaU’s native runtime, QuickJS integration, browser APIs, GPU rendering, audio and optimizations are this project's foundation. This is an adaptation of that work. Gameplay and assets belong to **[official PokeRogue and its contributors](https://github.com/pagefaultgames/pokerogue)**.
 
-**Gameplay and assets: [Pagefault Games' official PokeRogue](https://github.com/pagefaultgames/pokerogue)**
-and its contributors. Gameplay updates come directly from official upstream.
-See [NX credits](docs/nx-credits.md) for provenance and licensing.
+## Modes
+
+- **Online:** loads live pokerogue.net, including its normal account login and server APIs. Authenticated cloud-save and Daily Run verification on Switch is still pending. No cheats, developer evaluation channel, or save-file import.
+- **Offline:** downloads the normal offline distribution used by [Admiral-Billy’s app](https://github.com/Admiral-Billy/Pokerogue-App) when requested. Plays directly from one `game.zip`, without extracting tens of thousands of files. No account-server access or cheats.
+- **Debug:** visible but unavailable in 0.2.0-rc1. Isolated SilverShadow cheats, enhancements and custom modes are planned. No minigames or Google Drive integration in this release.
+
+The selector uses the official plains background, logo, window, cursor and Emerald font, downloaded and cached on first use. Mode-specific saves, cookies and caches live in separate profiles. Close and reopen the app to choose another mode; the JavaScript runtime is never reused across modes.
+
+Direct menu taps, optional on-screen controls and physical controllers can be used together. The on-screen controls are drawn in code without generated artwork. Some direct-touch screens still require broader device testing; the pad is available as an alternative.
+
+## Updates
+
+Online fetches the current page/manifests and reuses cached versioned assets. A live update can require a runtime compatibility update; it is not a guarantee of perpetual compatibility.
+
+Offline checks for an update and offers it in the selector. Downloads can resume, and saves are separate from the game archive. **Offline updates currently download the full archive, not binary deltas.** App/runtime updates are separate from game updates.
+
+## Build and test status
+
+0.2.0-rc1 is a candidate, not a claim of completed Switch account testing. Android has reached the live official login screen on a Retroid Pocket Nova with native Adreno rendering. Login touch selection and masked password entry have been checked without submitting credentials. See [testing evidence](docs/nx-testing.md) and the [release checklist](docs/nx-client-release.md).
+
+- [Build and copy-ready installation](docs/nx-build.md)
+- [Mode boundaries and roadmap](docs/nx-modes.md)
+- [Credits and provenance](docs/nx-credits.md)
+- [AI assistance disclosure](AI_DISCLOSURE.md)
 
 ## Architecture
 
-- Native C host using libnx and SDL2 on Switch.
-- Embedded QuickJS-ng runs the official game's JavaScript and Phaser.
-- Native EGL/OpenGL ES through Mesa/nouveau uses the Switch GPU.
-- Offline game assets are read from one archive without bulk extraction.
-- No nx.js or full browser dependency, and no full C++ gameplay rewrite.
+Native C host using libnx and SDL2 on Switch, with QuickJS-ng executing the upstream JavaScript/Phaser game. EGL/OpenGL ES through Mesa/nouveau uses the Switch GPU. Android uses SDL2 and the device's OpenGL ES driver. No nx.js or WebView is used. This client is separate from the full C++ gameplay rewrite experiment.
 
-## Status and getting started
+`runtime/` contains the client. `game/` retains the earlier official source snapshot and small touch adapter source for review/regeneration; **release packaging does not build or bundle that game**. See [the upstream Vita README](docs/upstream-vita-readme.md) for its original project description.
 
-This is an **offline test port**. Official online login, server saves, and the
-authentic online Daily Run are not integrated. Cheats are not included.
-The active roadmap adds isolated online/offline/SilverShadow modes, custom runs,
-cheats and enhancements. **All minigames are deferred and are not included.**
-The maintainer has played through wave 11 on Switch and confirmed the button
-mapping correction. The latest save fix passes host tests and cross-compilation
-but still needs repeated save/reopen verification on real Switch hardware.
+## AI assistance and attribution
 
-- [Build and copy-ready Switch installation](docs/nx-build.md)
-- [Testing evidence and known limitations](docs/nx-testing.md)
-- [Source revisions](game/handheld/upstream.json)
-- [Credits](docs/nx-credits.md)
-- [Three-mode roadmap: Official, Offline, SilverShadow](docs/nx-modes.md)
+**AI assisted coding, debugging, documentation and testing. No AI-generated game assets were added.** Automated checks and Android tests do not establish Switch hardware performance. Original history, licenses and attribution are preserved; assets retain their own terms.
 
-## AI assistance disclosure
-
-**AI assisted with coding, debugging, documentation, and testing. No AI-generated
-game assets were added for this port.** Switch hardware results were provided by
-the human maintainer; AI-assisted builds and tests do not imply full validation.
-Read the [full disclosure](AI_DISCLOSURE.md).
-
-## Attribution and project status
-
-This is an independent fan project, not an official Pagefault Games release or
-an endorsement by krappaU, Nintendo, The Pokemon Company, Game Freak, or Sony.
-Original license and attribution files are preserved. Game assets and third-party
-components retain their respective terms; the code license is not a blanket
-license for the game's artwork or trademarks.
-
-
-## Online and offline scope
-
-The upstream Vita client already supports the live pokerogue.net game, accounts,
-cloud saves, and offline play. That work is retained as the foundation for future
-online support here. Current Switch test builds deliberately enforce offline
-mode; upstream Vita functionality is not proof that the same paths are validated
-on Switch. Official server coordination, save separation, and device testing are
-still required before enabling an online player mode.
-
-## Repository layout
-
-| Directory | Purpose |
-| --- | --- |
-| `runtime/` | Vita-derived native host, Switch and Android adaptation |
-| `game/` | Official PokeRogue subtree and small handheld build/touch adapters |
-| `docs/` | NX build, testing, credits, and inherited development documentation |
-| `scripts/stage_switch.py` | Copy-ready Switch test folders; no unzip step |
-
-The [original Vita README](docs/upstream-vita-readme.md) and
-[official game README](game/README.md) retain upstream information and credits.
-Some inherited documents describe Vita capabilities rather than NX test status.
+This is an independent fan project, not an official release or endorsement by Pagefault Games, krappaU, Nintendo, Sony, The Pokémon Company or Game Freak.

@@ -1,12 +1,8 @@
 # Three-mode product plan
 
-Requested 2026-10-29; minigames explicitly deferred the same day. This is the implementation specification, not a claim that
-the modes already exist. The current build is the offline test described in
-[nx-testing.md](nx-testing.md). Switch is the first target; Android builds remain
-part of the project. Builds and validation are local; inherited GitHub Actions
-remain disabled in this fork.
+0.2.0-rc1 uses one APK and one NRO. Online and Offline are selectable now; Debug is a visible unavailable placeholder for a later release. Minigames and Google Drive integration are excluded. This document distinguishes the completed native boundaries from the remaining roadmap; see [testing](nx-testing.md).
 
-The startup screen will offer three explicit choices, usable with controller or
+The startup screen offers three explicit choices, usable with controller or
 direct touch. Each mode gets its own profile, storage directory, cookie/auth
 scope, and capabilities. Changing mode must fully tear down the previous game
 instance so hooks, cheats, credentials, and pending network requests cannot leak
@@ -16,7 +12,7 @@ into another mode.
 | --- | --- | --- | --- |
 | Official account login and cloud save | Yes, after compatibility validation | No | No |
 | Official Daily Run/feed | Official authenticated service | No claim to be official daily | No claim to be official daily |
-| Standard gameplay | Official live client | Pinned official offline bundle | Official base plus explicit enhancements |
+| Standard gameplay | Official live client | Downloaded standard offline distribution | Official base plus explicit enhancements |
 | Cheats/debug input/evaluation | Disabled | Disabled | Separate, redesigned cheats menu |
 | Manual save import | Never | Yes, including a copy exported from online | Yes, isolated enhanced profile |
 | Manual save export | One-way offline copy where supported by official APIs | Yes | Yes |

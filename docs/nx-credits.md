@@ -8,7 +8,7 @@ rendering and audio infrastructure, and existing optimizations are the foundatio
 of this port. We are adapting that work for Switch and Android, not claiming to
 have created it from scratch.
 
-Imported runtime revision: `01e917799043101c37c07fb7e5a5901b1de8e397`.
+Imported runtime revision: `ea0d7d4123a78bd112535efff5e27fbf9d3bb72b`.
 This repository is a direct fork of that project. Its Git history, license,
 attribution and original documentation are preserved. The original README is
 retained at [upstream-vita-readme.md](upstream-vita-readme.md).
@@ -23,6 +23,12 @@ and their individual attribution/license files.
 This port takes official gameplay updates directly from Pagefault Games. Scooom's
 offline fork and the maintainer's earlier mod/minigames project are not inputs
 to this new build. Those projects remain separate.
+
+## Offline distribution
+
+[Admiral-Billy’s PokeRogue App](https://github.com/Admiral-Billy/Pokerogue-App) and [offline game distribution](https://github.com/Admiral-Billy/pokerogue) supply the existing offline-download approach used by the Vita client. The new app downloads that archive on request; it does not ship a Scooom-derived game or merge Scooom's mods.
+
+The launcher uses the official game's downloaded plains background, logo, window, cursor and Emerald font, retaining upstream asset attribution. No new launcher artwork was invented.
 
 ## Platform and library contributors
 

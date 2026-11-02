@@ -17,7 +17,7 @@ size_t __real_fwrite(const void *, size_t, size_t, FILE *);
 
 void host_log(const char *fmt, ...) { (void)fmt; }
 int __wrap_rename(const char *from, const char *to) {
-    if ((fail_install && strstr(from, ".tmp")) || (fail_restore && strstr(from, ".bak"))) {
+    if ((fail_install && (strstr(from, ".tmp") || strstr(from, ".part"))) || (fail_restore && strstr(from, ".bak"))) {
         errno = EIO;
         return -1;
     }
@@ -72,6 +72,20 @@ int main(void) {
     struct stat st;
     assert(stat("directory", &st) == 0 && S_ISDIR(st.st_mode));
     assert(!storage_write_file("missing/save", "data", 4));
+    assert(storage_write_file("game.zip", "old archive", 11));
+    assert(storage_write_file("game.zip.part", "new archive", 11));
+    fail_install = 1;
+    assert(!storage_install_file("game.zip.part", "game.zip"));
+    expect("game.zip", "old archive"); expect("game.zip.part", "new archive");
+    fail_restore = 1;
+    assert(!storage_install_file("game.zip.part", "game.zip"));
+    assert(access("game.zip", F_OK) != 0);
+    fail_install = fail_restore = 0;
+    assert(storage_recover_previous("game.zip")); expect("game.zip", "old archive");
+    assert(storage_install_file("game.zip.part", "game.zip")); expect("game.zip", "new archive");
+    assert(storage_recover_previous("game.zip")); expect("game.zip", "new archive");
+    assert(!storage_recover_previous("absent.zip"));
+    remove("game.zip");remove("game.zip.bak");
     remove("save.json"); remove("save.json.bak"); remove("save.json.tmp");
     remove("directory.tmp"); rmdir("directory");
     assert(chdir("/") == 0 && rmdir(dir) == 0);

@@ -1,36 +1,10 @@
 # Building PokeRogue NX
 
-This repository is a direct fork of krappaU/pokerogue-vita. The official game
-is vendored under `game/` as a Git subtree; a second user-owned fork is not needed.
-See `game/handheld/upstream.json` for the imported source revisions.
+This is a fork of [krappaU/pokerogue-vita](https://github.com/krappaU/pokerogue-vita). Release APK/NRO files contain the native client, runtime scripts and CA certificates. They do not include game code, sprites, audio, fonts or launcher artwork. No game build or asset checkout is needed for release packaging.
 
-## Game bundle
+## Switch
 
-Use Node.js 24.9 or newer and the pnpm version declared in `game/package.json`.
-From a fresh checkout:
-
-```sh
-git submodule update --init --recursive
-cd game
-pnpm install --frozen-lockfile
-pnpm exec vite build --mode native --config handheld/vite.config.ts
-node handheld/build-native-touch.cjs ../runtime/js/handheld-touch.js
-python3 handheld/package_native.py ../runtime/.cache/android/game.zip
-cd ..
-```
-
-The packaging command validates the asset/localization revisions and puts the
-game and assets in one indexed archive. The native runtime reads that archive
-without extracting tens of thousands of files onto the SD card. `android` in
-this cache path is historical; the same game archive is used by Switch.
-
-## Switch runtime
-
-Use Linux or WSL and devkitPro's Switch packages. The tested toolchain includes
-devkitA64 r30, libnx 4.12.0, switch-tools 1.13.1, switch-cmake, switch-pkg-config,
-switch-sdl2 2.28.5, switch-mesa 20.1.0, switch-libdrm_nouveau, switch-libglapi,
-switch-curl 7.69.1, switch-mbedtls 2.28.10, switch-zlib, and switch-glad.
-Install packages through devkitPro's supported package manager.
+Use Linux/WSL with devkitPro: devkitA64, libnx, switch-tools, switch-cmake, switch-sdl2, switch-mesa, switch-libdrm_nouveau, switch-libglapi, switch-curl, switch-mbedtls, switch-zlib and switch-glad. The local tested toolchain includes devkitA64 r30, libnx 4.12.0 and switch-mesa 20.1.0.
 
 ```sh
 cd runtime
@@ -38,61 +12,42 @@ bash scripts/fetch_deps.sh
 bash scripts/build_switch.sh
 ```
 
-Dependency fetching downloads the pinned sources and applies the bundled
-QuickJS patches. Use a fresh dependency directory: the inherited fetch script
-resets tracked changes inside its QuickJS dependency checkout.
+Fetch dependencies into a fresh dependency directory: the inherited script resets its QuickJS dependency checkout. Do not run it against a directory shared with unfinished work. For Windows-managed worktrees built in WSL, pass `PKR_COMMIT=<Windows git short HEAD>` to the build script; otherwise it reads the local Git checkout normally.
 
-Output: `runtime/build-switch/pokerogue-native-test.nro`, including the
-runtime JavaScript in RomFS. The offline test build enforces the bundled game;
-its diagnostics do not enable the developer input/evaluation channel.
+Output: `runtime/build-switch/pokerogue-nx.nro`. `PKR_DEBUG`, `PKR_DEV` and `PKR_OFFLINE_TEST` are disabled. RomFS contains runtime scripts and the CA bundle, with no `debug.js` or game archive.
 
-Stage a full first installation from the repository root:
+From the repository root:
 
 ```sh
-python3 scripts/stage_switch.py --output outputs/Switch-Test \
-  --game runtime/.cache/android/game.zip
+python3 scripts/stage_switch.py --output outputs/PokeRogue-NX-0.2.0-rc1-Switch
 ```
 
-For later runtime-only updates, omit `--game`. This produces a folder containing
-`switch/pokerogue-native-test/`, not a ZIP. Close the app, copy the `switch` folder
-to the SD root and replace only supplied files. Keep existing saves and assets.
-Launch through full application mode, holding R while starting a game to enter
-hbmenu. Applet mode is deliberately rejected due to its smaller memory limit.
+Copy the resulting **switch folder** to the SD root. No unzip step. Launch `switch/pokerogue-nx/pokerogue-nx.nro` through full application mode (hold R while starting a game to enter hbmenu). Applet mode is rejected. Preserve existing saves.
 
-Back up `localStorage-offline.json` and any `.tmp`/`.bak` files before experimental
-save updates. The 0.1.3 save fix still needs real Switch save/reopen validation.
+The new app directory is distinct from the old `pokerogue-native-test` installation. Do not move old offline saves into its online profile. Manual migration into Offline can be tested through normal save import after backing up the old installation.
 
-## Android and desktop
+## Android
 
-The experimental Android scripts currently target a Windows host, ARM64, API 26+,
-Android SDK platform 35, build-tools 36.0.0, NDK 29.0.14206865 and JDK 21.
-Set `ANDROID_HOME` and `JAVA_HOME`. Fetch shared dependencies with the script
-above, then use `runtime/scripts/fetch_android_deps.py`,
-`build_android.py`, and `package_android.py`. Package the game archive first.
-The packager creates a local debug signing key if needed; never commit it.
-The earlier WebView experiment under `game/handheld/android` is not the native port.
+Windows host; ARM64, Android API 26+, SDK platform 35, build-tools 36.0.0, NDK 29.0.14206865 and JDK 21. Set `ANDROID_HOME` and `JAVA_HOME`. Fetch shared dependencies as above, then:
 
-See `runtime/README.md` for the inherited Linux reference build. Some
-documentation in the runtime and inherited docs describes upstream Vita features, not Switch
-features implemented or validated here.
+```powershell
+python runtime/scripts/fetch_android_deps.py
+python runtime/scripts/build_android.py
+python runtime/scripts/package_android.py
+```
+
+Output: `runtime/build-android/apk/PokeRogue-NX-0.2.0-rc1-android-arm64.apk`. Package ID `com.silvershadow.pokeroguenx`; this installs separately from the older native test. The APK is non-debuggable, disallows backups and cleartext HTTP, and requests Internet access. Document import/export uses Android's system picker without broad storage permissions.
+
+The packager creates/reuses a local signing key under `%LOCALAPPDATA%/PokeRogueNX/signing`. Keep the key/password private and retain them for updates; they are not release artifacts. A different maintainer's key produces an independently signed app.
+
+## Content and updates
+
+First launch downloads/caches the official menu artwork and font. Online loads the live official game; Offline downloads `game.zip` on request from Admiral-Billy's release feed. Offline gameplay uses the archive directly. An update is offered rather than silently replacing an offline game; current updates download the whole archive and resume interrupted downloads.
 
 ## Updating upstream
 
-The `upstream` remote points to krappaU/pokerogue-vita. Integrate a reviewed
-runtime revision on a dedicated branch with a normal Git merge; preserve and
-test the Switch/Android adaptations. Record the reviewed revision in
-`game/handheld/upstream.json`.
+Merge reviewed `krappaU/pokerogue-vita` commits normally from the `upstream` remote on a dedicated branch. Keep platform additions in the SDL platform layer, launcher/input modules and packaging scripts. Record the revision in `game/handheld/upstream.json`. The current imported runtime is `ea0d7d4123a78bd112535efff5e27fbf9d3bb72b`.
 
-The `official` remote points to pagefaultgames/pokerogue. Import reviewed gameplay
-updates using `git subtree pull --prefix=game official <reviewed-ref> --squash`
-on a dedicated update branch. Resolve the small handheld overlay, update the
-official revision in `game/handheld/upstream.json`, and initialize the exact
-asset/localization submodule revisions at `game/assets` and `game/locales`.
-The outer `.gitmodules` registers those nested paths for a fresh clone.
+The release game is fetched at runtime; updating the older `game/` reference subtree is a separate maintenance task. If the live game changes its private UI fields, review the direct-touch adapter against official source. Its generator is `game/handheld/build-native-touch.cjs`, requiring TypeScript. The generated `runtime/js/handheld-touch.js` is committed, so normal runtime builds do not require Node or a game build.
 
-Rebuild the bundle and regenerate `runtime/js/handheld-touch.js`. Review
-`runtime/src/gamefix.c`, native fast paths, shader transforms, and private UI
-hooks when the game's code or Phaser changes. Run checks and device smoke tests
-before shipping. Official updates are not guaranteed to be automatically
-compatible. The source archive records both the official upstream revision and
-the NX source commit used to build it.
+Run native mode/touch/save regression tests, inspect packages for unintended game/debug files, then test Online login/save/Daily and Offline save/reopen on both platforms before declaring a stable release. See [testing](nx-testing.md).

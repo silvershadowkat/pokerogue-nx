@@ -7,6 +7,7 @@
 #include <stdint.h>
 
 #include "quickjs.h"
+#include "client_modes.h"
 
 // ---------------------------------------------------------------- config
 
@@ -14,6 +15,10 @@ typedef struct {
     const char *base_url;    // page URL the game is loaded from, e.g. https://pokerogue.net/
     const char *js_dir;      // runtime's own JS (bootstrap, DOM shim)
     const char *data_dir;    // writable: HTTP cache, localStorage, cookies
+    const char *app_dir;     // launcher/config/certificate root; profiles are children
+    pkr_client_mode client_mode;
+    bool direct_touch;      // direct game-menu taps; physical controls remain enabled
+    bool touch_pad;         // optional native on-screen controller
     const char *control;     // optional FIFO path for test commands (see main.c)
     int win_w, win_h;        // window / screen size
     int exit_after_frames;   // 0 = run forever
@@ -48,6 +53,9 @@ typedef struct {
 } host_config;
 
 extern host_config g_cfg;
+void touch_overlay_active(bool enabled);
+bool touch_overlay_visible(void);
+void touch_overlay_draw(void);
 
 // ---------------------------------------------------------------- logging / time
 
@@ -88,6 +96,8 @@ typedef struct {
     float axes[4];
     float buttons[18]; // W3C "standard" layout; 17 = touchpad click (the game's "submit")
 } plat_gamepad;
+bool touch_overlay_event(const plat_event *event);
+void touch_overlay_merge(plat_gamepad *out, int *count, int max);
 
 bool plat_init(int w, int h);
 // Starts the audio output thread: it calls mix(out, frames) for interleaved 16-bit stereo at `rate`.
@@ -162,6 +172,7 @@ void url_resolve(const char *base, const char *url, char *out, size_t n);
 // ---------------------------------------------------------------- networking (net.c)
 
 void net_init(void);
+void net_start_workers(void); // after choosing a stable mode/profile
 void net_shutdown(void);
 void host_js_set_interrupt(JSInterruptHandler *cb);
 // Compiled-code cache (js_host.c), used by precompile.c

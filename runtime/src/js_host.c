@@ -1062,6 +1062,8 @@ static JSValue n_notice(JSContext *ctx, JSValueConst this_val, int argc, JSValue
 
 // pickFile(title, relDir, extensions): file picker over the game on <data>/relDir (dialogs.c)
 static JSValue n_pick_file(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
+    if (!client_can_import(g_cfg.client_mode))
+        return JS_ThrowTypeError(ctx, "Save import is unavailable in official online mode");
 #ifdef __ANDROID__
     JNIEnv *env = SDL_AndroidGetJNIEnv();
     jobject activity = SDL_AndroidGetActivity();
@@ -1088,6 +1090,7 @@ static JSValue n_pick_file(JSContext *ctx, JSValueConst this_val, int argc, JSVa
 
 // pickPoll() -> undefined (nothing yet) | null (cancelled) | [name, ArrayBuffer]
 static JSValue n_pick_poll(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
+    if (!client_can_import(g_cfg.client_mode)) return JS_NULL;
 #ifdef __ANDROID__
     JNIEnv *env = SDL_AndroidGetJNIEnv();
     jobject activity = SDL_AndroidGetActivity();
@@ -1153,12 +1156,14 @@ static JSValue n_export_document(JSContext *ctx, JSValueConst this_val, int argc
     JNIEnv *env = SDL_AndroidGetJNIEnv();
     jobject activity = SDL_AndroidGetActivity();
     jclass cls = (*env)->GetObjectClass(env, activity);
-    jmethodID method = (*env)->GetMethodID(env, cls, "exportSaveDocument", "(Ljava/lang/String;)V");
+    jmethodID method = (*env)->GetMethodID(env, cls, "exportSaveDocument", "(Ljava/lang/String;Ljava/lang/String;)V");
     jstring filename = (*env)->NewStringUTF(env, name);
-    if (method && filename) (*env)->CallVoidMethod(env, activity, method, filename);
+    jstring profile = (*env)->NewStringUTF(env, client_mode_name(g_cfg.client_mode));
+    if (method && filename && profile) (*env)->CallVoidMethod(env, activity, method, filename, profile);
     bool failed = (*env)->ExceptionCheck(env);
     if (failed) (*env)->ExceptionClear(env);
     if (filename) (*env)->DeleteLocalRef(env, filename);
+    if (profile) (*env)->DeleteLocalRef(env, profile);
     (*env)->DeleteLocalRef(env, cls);
     (*env)->DeleteLocalRef(env, activity);
     JS_FreeCString(ctx, name);
@@ -1263,11 +1268,15 @@ JSContext *host_js_init(void) {
     JS_SetPropertyStr(ctx, native, "devSendBenchLog", JS_NewCFunction(ctx, n_dev_send_bench_log, "devSendBenchLog", 0));
 #endif
     JS_SetPropertyStr(ctx, native, "baseURL", JS_NewString(ctx, g_cfg.base_url));
+    JS_SetPropertyStr(ctx, native, "clientMode", JS_NewString(ctx, client_mode_name(g_cfg.client_mode)));
+    JS_SetPropertyStr(ctx, native, "allowSaveImport", JS_NewBool(ctx, client_can_import(g_cfg.client_mode)));
+    JS_SetPropertyStr(ctx, native, "directTouch", JS_NewBool(ctx, g_cfg.direct_touch));
 #ifdef __SWITCH__
     JS_SetPropertyStr(ctx, native, "storageBackupRecovery", JS_TRUE);
 #endif
     JS_SetPropertyStr(ctx, native, "jsDir", JS_NewString(ctx, g_cfg.js_dir));
     JS_SetPropertyStr(ctx, native, "dataDir", JS_NewString(ctx, g_cfg.data_dir));
+    JS_SetPropertyStr(ctx, native, "appDir", JS_NewString(ctx, g_cfg.app_dir));
 #ifdef PKR_DEBUG
     JS_SetPropertyStr(ctx, native, "debug", JS_TRUE); // debug build: debug.js, the probes' hooks
     JS_SetPropertyStr(ctx, native, "plainShaders", JS_NewBool(ctx, g_cfg.plain_shaders)); // js/webgl.js
@@ -1280,7 +1289,7 @@ JSContext *host_js_init(void) {
     JS_SetPropertyStr(ctx, native, "probeScripts", JS_FALSE);
 #endif
     JS_SetPropertyStr(ctx, native, "screenWidth", JS_NewInt32(ctx, g_cfg.win_w));
-#ifdef __ANDROID__
+#if defined(__ANDROID__) || defined(__SWITCH__)
     JS_SetPropertyStr(ctx, native, "handheldTouch", JS_TRUE);
 #endif
     JS_SetPropertyStr(ctx, native, "screenHeight", JS_NewInt32(ctx, g_cfg.win_h));

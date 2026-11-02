@@ -36,6 +36,6 @@ if not (deps/'lib/libmbedtls.a').exists():
     run('install-mbedtls',[cmake,'--install',build/'mbedtls'])
 run('configure-runtime',[cmake,'-S',root,'-B',build/'runtime',*common,
     f'-DPKR_ANDROID_DEPS={deps.as_posix()}','-DPKR_COMMIT='+subprocess.check_output(['git','rev-parse','--short','HEAD'],cwd=root,text=True).strip()+'-android',
-    '-DPKR_DEBUG=ON','-DPKR_OFFLINE_TEST=ON'])
+    '-DPKR_DEBUG=OFF','-DPKR_DEV=OFF','-DPKR_OFFLINE_TEST=OFF'])
 run('build-runtime',[cmake,'--build',build/'runtime','-j2'],900)
 print('Native Android libraries built.',flush=True)

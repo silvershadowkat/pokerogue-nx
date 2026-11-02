@@ -261,6 +261,9 @@ void net_init(void) {
     char dir[512];
     snprintf(dir, sizeof dir, "%s/" CACHE_DIR, g_cfg.data_dir);
     mkdir(dir, 0777);
+}
+
+void net_start_workers(void) {
     net_thread_start();
     cache_thread_start();
 }
@@ -363,7 +366,15 @@ static void cache_write(const char *url, const char *data, size_t len) {
         if (!(f = fopen(tmp, "wb"))) return;
     }
     bool ok = fwrite(data, 1, len, f) == len;
-    if (fclose(f) == 0 && ok) rename(tmp, path);
+    if (fclose(f) == 0 && ok) {
+#ifdef __SWITCH__
+        // SD rename cannot overwrite. Cache data is disposable: keep the old
+        // entry until a complete replacement exists, then allow a network miss
+        // if interrupted here. Save files use the separate recoverable writer.
+        remove(path);
+#endif
+        if (rename(tmp, path) != 0) remove(tmp);
+    }
 }
 
 // ---------------------------------------------------------------- curl helpers
@@ -465,7 +476,7 @@ static void apply_common_opts(CURL *e) {
     curl_easy_setopt(e, CURLOPT_CAINFO, "romfs:/cacert.pem");
 #elif defined(__ANDROID__)
     char ca_path[1024];
-    snprintf(ca_path, sizeof ca_path, "%s/cacert.pem", g_cfg.data_dir);
+    snprintf(ca_path, sizeof ca_path, "%s/cacert.pem", g_cfg.app_dir ? g_cfg.app_dir : g_cfg.data_dir);
     curl_easy_setopt(e, CURLOPT_CAINFO, ca_path);
 #elif !defined(PKR_MBEDTLS)
     if (ca_store) {
@@ -568,8 +579,8 @@ bool net_is_local(const char *url) {
 static mz_zip_archive local_zip;
 static int local_zip_state; // 0 not opened, 1 open, -1 failed
 #ifdef __ANDROID__
-// SDL opens uncompressed APK assets with random access. Keep the entire game
-// archive in the APK instead of copying or unpacking it to private storage.
+// SDL provides random access to the downloaded archive. The legacy offline-test
+// build can also use an APK asset, but client releases never bundle that archive.
 static SDL_RWops *apk_game;
 static size_t apk_zip_read(void *opaque, mz_uint64 offset, void *buffer, size_t length) {
     SDL_RWops *asset = opaque;
@@ -595,7 +606,7 @@ static char *zip_read_locked(const char *name, size_t *len) {
     if (local_zip_state == 0) {
         memset(&local_zip, 0, sizeof local_zip);
 #ifdef __ANDROID__
-        apk_game = SDL_RWFromFile("game.zip", "rb");
+        apk_game = SDL_RWFromFile(g_cfg.local_dir, "rb");
         Sint64 size = apk_game ? SDL_RWsize(apk_game) : -1;
         local_zip.m_pRead = apk_zip_read;
         local_zip.m_pIO_opaque = apk_game;
@@ -1057,6 +1068,13 @@ static JSValue n_http(JSContext *ctx, JSValueConst this_val, int argc, JSValueCo
         JS_FreeCString(ctx, method);
         JS_FreeCString(ctx, url);
         return JS_EXCEPTION;
+    }
+    // Offline profiles never send gameplay or imported data to an account API.
+    // Installer/update requests use net_get_sync/net_download_file separately.
+    if (!client_can_connect_account(g_cfg.client_mode) && !net_is_local(url)) {
+        JS_FreeCString(ctx, method);
+        JS_FreeCString(ctx, url);
+        return JS_ThrowTypeError(ctx, "Network access is disabled in offline mode");
     }
     req *r = calloc(1, sizeof *r);
     r->id = next_id++;

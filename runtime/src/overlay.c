@@ -289,8 +289,8 @@ void overlay_image_draw(const uint8_t *rgba, int iw, int ih, bool changed, int *
 // Draws an RGBA image stretched over a screen rectangle (text of the game's input fields).
 // Each `slot` keeps its own texture; `changed` re-uploads the pixels.
 void overlay_rgba_at(int slot, const uint8_t *rgba, int iw, int ih, bool changed, float x, float y, float w, float h) {
-    static GLuint tex[8];
-    if (slot < 0 || slot >= 8) return;
+    static GLuint tex[16];
+    if (slot < 0 || slot >= 16) return;
     int sw, sh;
     begin_draw(&sw, &sh);
     if (changed || !tex[slot]) upload(&tex[slot], rgba, iw, ih);
