@@ -30,6 +30,10 @@ Username/password entry uses the official game's login request through verified 
 
 On 2026-11-02 a fresh fetch confirmed that Vita `main` still points to `ea0d7d4123a78bd112535efff5e27fbf9d3bb72b` (runtime 1.0.6). All commits on that branch are included in RC4; there are zero missing mainline commits. The latest arena sprite batching changes are retained. Older experimental branches are not automatically merged.
 
+## Switch cache-file replacement
+
+RC6 uses the recoverable writer for compiled modules and `bytecode/startup.txt`, preventing stale `.tmp` index files caused by Switch rename-over-existing behavior. Failed index updates retry. This is independent of the RC5 clock/save correction. The on-device cleanup validates the pending index and referenced cache files before promoting it, with a private backup of the original; user profiles and settings are preserved.
+
 ## Current cloud-save blocker
 
 RC4 Switch login/server download worked, but the server rejected its save upload because the runtime returned fractional `Date.now()` timestamps. RC5 restores integer browser timestamps in `runtime/js/core.js`; the actual-shim regression reproduces the reported value and passes after correction. This is a runtime compatibility fix; authentication, official game save rules and server validation are unchanged. Cloud save success must be reverified from a freshly reloaded browser before release.

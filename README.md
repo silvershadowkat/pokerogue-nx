@@ -8,7 +8,7 @@ krappaU’s native runtime, QuickJS integration, browser APIs, GPU rendering, au
 
 - **Online:** loads live pokerogue.net, including its normal account login and server APIs. Android login, authenticated Daily Run and server-save refresh have been reported working by the maintainer; Switch verification and full save round-trip testing remain pending. No cheats, developer evaluation channel, or save-file import.
 - **Offline:** downloads the normal offline distribution used by [Admiral-Billy’s app](https://github.com/Admiral-Billy/Pokerogue-App) when requested. Plays directly from one `game.zip`, without extracting tens of thousands of files. No account-server access or cheats.
-- **Debug:** visible but unavailable in 0.2.0-rc5. Isolated SilverShadow cheats, enhancements and custom modes are planned. No minigames or Google Drive integration in this release.
+- **Debug:** visible but unavailable in 0.2.0-rc6. Isolated SilverShadow cheats, enhancements and custom modes are planned. No minigames or Google Drive integration in this release.
 
 The selector uses the official plains background, logo, window, cursor and Emerald font, downloaded and cached on first use. Mode-specific saves, cookies and caches live in separate profiles. Close and reopen the app to choose another mode; the JavaScript runtime is never reused across modes.
 
@@ -24,7 +24,7 @@ Offline checks for an update and offers it in the selector. Downloads can resume
 
 **Cloud-save retest required:** RC4 Switch login/download worked, but its save upload was rejected due to fractional runtime timestamps. RC5 corrects the clock shim; successful server save/reopen still requires hardware verification. A return to the title screen alone does not prove upload success.
 
-0.2.0-rc5 is a candidate, not a claim of completed Switch account testing. The maintainer confirmed Android official-account login, authenticated Daily matching the website, server-data refresh and smooth RC4 touch-pad feel on Retroid. Full account save-upload/reopen and Switch hardware acceptance remain pending. See [testing evidence](docs/nx-testing.md) and the [release checklist](docs/nx-client-release.md).
+0.2.0-rc6 is a candidate, not a claim of completed Switch account testing. The maintainer confirmed Android official-account login, authenticated Daily matching the website, server-data refresh and smooth RC4 touch-pad feel on Retroid. Full account save-upload/reopen and Switch hardware acceptance remain pending. See [testing evidence](docs/nx-testing.md) and the [release checklist](docs/nx-client-release.md).
 
 - [Build and copy-ready installation](docs/nx-build.md)
 - [Mode boundaries and roadmap](docs/nx-modes.md)

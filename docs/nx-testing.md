@@ -2,6 +2,12 @@
 
 Status as of 2026-11-02. 0.2.0-rc1 is the Vita-derived Online/Offline candidate. Earlier 0.1.x results below describe the old bundled-offline test and do not prove the new account path works on Switch.
 
+## 0.2.0-rc6: Switch cache replacement
+
+An RC4 SD audit found a newer `bytecode/startup.txt.tmp` left beside an older startup index. The writer used `rename(tmp,path)` directly, which cannot overwrite on Switch, and ignored the failure. RC6 routes both module-cache writes and startup-index updates through the recoverable replacement writer. Failed index writes remain dirty and retry after the quiet interval. Small `.bak` cache files are intentional recovery copies.
+
+The actual host writer regression runs under emulated Switch no-overwrite semantics: replacing an existing compiled module, preserving the prior startup list after an injected installation failure, retrying successfully and consuming the completed `.tmp`. RC6 also includes the RC5 integer-clock fix; cloud-save upload/reopen still requires a successful hardware retest.
+
 ## 0.2.0-rc5: server-save timestamp correction
 
 The maintainer's RC4 Switch test confirmed account login, server-data download, continuing a run, captures/level-ups and reaching Save and Quit. A freshly reloaded browser did not show the Switch progress. The supplied log identifies the failure: the save API rejected a fractional `system.timestamp` with `json: cannot unmarshal number ... into Go struct field CombinedSaveData.system.timestamp of type int`. The game returned to the title screen after the rejected request, so that UI transition did not establish a successful cloud save.

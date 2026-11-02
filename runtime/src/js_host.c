@@ -284,20 +284,14 @@ static void bytecode_cleanup(void) {
 
 // Writes a compiled module (any thread). Returns false if the file couldn't be written.
 bool module_bytecode_write(const char *path, const void *bc, size_t blen) {
-    char dir[600], tmp[720];
+    char dir[600];
     snprintf(dir, sizeof dir, "%s/bytecode", g_cfg.data_dir);
 #ifdef __vita__
     mkdir(dir, 0777);
 #else
     mkdir(dir, 0755);
 #endif
-    snprintf(tmp, sizeof tmp, "%s.tmp", path);
-    FILE *f = fopen(tmp, "wb");
-    bool ok = f && fwrite(bc, 1, blen, f) == blen;
-    if (f) ok &= fclose(f) == 0;
-    if (ok) ok = rename(tmp, path) == 0;
-    if (!ok) remove(tmp);
-    return ok;
+    return storage_write_file(path, bc, blen);
 }
 
 static void bytecode_save(JSContext *ctx, JSValueConst fn, const char *path, int flags) {
@@ -438,19 +432,18 @@ static void bytecode_note_loaded(const char *path) {
 void module_list_flush(void) {
     if (!bc_list_dirty || host_now_ms() - bc_list_t < 3000) return;
     bc_list_dirty = false;
-    char path[700], tmp[720], text[BC_MAX * 710];
+    char path[700], text[BC_MAX * 710];
     size_t o = 0;
     pthread_mutex_lock(&bc_lock);
     for (int i = 0; i < bc_loaded_n; i++) o += snprintf(text + o, sizeof text - o, "%s\n", bc_loaded[i]);
     pthread_mutex_unlock(&bc_lock);
     snprintf(path, sizeof path, "%s/bytecode/startup.txt", g_cfg.data_dir);
-    snprintf(tmp, sizeof tmp, "%s.tmp", path);
-    FILE *f = fopen(tmp, "wb");
-    if (!f) return;
-    bool ok = fwrite(text, 1, o, f) == o;
-    ok &= fclose(f) == 0;
-    if (ok) rename(tmp, path);
-    else remove(tmp);
+    // Switch SD rename cannot replace an existing file. Use the same verified
+    // replacement/backup writer as local storage, and retry a failed update.
+    if (!storage_write_file(path, text, o)) {
+        bc_list_dirty = true;
+        bc_list_t = host_now_ms();
+    }
 }
 
 // ---- the module loader. JS_ReadObject loads a module's imports from inside (nested calls), so the

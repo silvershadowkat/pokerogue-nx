@@ -19,7 +19,7 @@ Output: `runtime/build-switch/pokerogue-nx.nro`. `PKR_DEBUG`, `PKR_DEV` and `PKR
 From the repository root:
 
 ```sh
-python3 scripts/stage_switch.py --output outputs/PokeRogue-NX-0.2.0-rc5-Switch
+python3 scripts/stage_switch.py --output outputs/PokeRogue-NX-0.2.0-rc6-Switch
 ```
 
 Copy the resulting **switch folder** to the SD root. No unzip step. Launch `switch/pokerogue-nx/pokerogue-nx.nro` through full application mode (hold R while starting a game to enter hbmenu). Applet mode is rejected. Preserve existing saves.
@@ -36,7 +36,7 @@ python runtime/scripts/build_android.py
 python runtime/scripts/package_android.py
 ```
 
-Output: `runtime/build-android/apk/PokeRogue-NX-0.2.0-rc5-android-arm64.apk`. Package ID `com.silvershadow.pokeroguenx`; this installs separately from the older native test. The APK is non-debuggable, disallows backups and cleartext HTTP, and requests Internet access. Document import/export uses Android's system picker without broad storage permissions.
+Output: `runtime/build-android/apk/PokeRogue-NX-0.2.0-rc6-android-arm64.apk`. Package ID `com.silvershadow.pokeroguenx`; this installs separately from the older native test. The APK is non-debuggable, disallows backups and cleartext HTTP, and requests Internet access. Document import/export uses Android's system picker without broad storage permissions.
 
 The packager creates/reuses a local signing key under `%LOCALAPPDATA%/PokeRogueNX/signing`. Keep the key/password private and retain them for updates; they are not release artifacts. A different maintainer's key produces an independently signed app.
 
