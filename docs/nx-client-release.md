@@ -30,6 +30,12 @@ Username/password entry uses the official game's login request through verified 
 
 On 2026-11-02 a fresh fetch confirmed that Vita `main` still points to `ea0d7d4123a78bd112535efff5e27fbf9d3bb72b` (runtime 1.0.6). All commits on that branch are included in RC4; there are zero missing mainline commits. The latest arena sprite batching changes are retained. Older experimental branches are not automatically merged.
 
+## Current cloud-save blocker
+
+RC4 Switch login/server download worked, but the server rejected its save upload because the runtime returned fractional `Date.now()` timestamps. RC5 restores integer browser timestamps in `runtime/js/core.js`; the actual-shim regression reproduces the reported value and passes after correction. This is a runtime compatibility fix; authentication, official game save rules and server validation are unchanged. Cloud save success must be reverified from a freshly reloaded browser before release.
+
+Online game Settings remain stock. Touch settings stay in the native selector, default to Fade on fresh RC5 installations, and remain device-local. Existing choices are preserved. Contextual shortcut coverage/labels, multi-aspect-ratio layout checks, touch-layout editing and haptics remain follow-up work.
+
 ## Updates and pending work
 
 Online automatically retrieves the live entry point and manifest, reusing versioned cached assets. Offline checks every six hours and offers an update. Offline downloads currently transfer the full ZIP; real per-file/byte deltas require a separate manifest/range update design. No game archive is extracted to the SD card.

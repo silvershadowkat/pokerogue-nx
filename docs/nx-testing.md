@@ -2,6 +2,16 @@
 
 Status as of 2026-11-02. 0.2.0-rc1 is the Vita-derived Online/Offline candidate. Earlier 0.1.x results below describe the old bundled-offline test and do not prove the new account path works on Switch.
 
+## 0.2.0-rc5: server-save timestamp correction
+
+The maintainer's RC4 Switch test confirmed account login, server-data download, continuing a run, captures/level-ups and reaching Save and Quit. A freshly reloaded browser did not show the Switch progress. The supplied log identifies the failure: the save API rejected a fractional `system.timestamp` with `json: cannot unmarshal number ... into Go struct field CombinedSaveData.system.timestamp of type int`. The game returned to the title screen after the rejected request, so that UI transition did not establish a successful cloud save.
+
+The runtime's server-clock offset contains fractional milliseconds. Its `Date.now()` wrapper added that offset without truncating, violating browser integer-millisecond behavior. RC5 truncates the corrected wall clock and leaves monotonic animation/timer time untouched. The actual core shim test reproduces the exact reported fractional value before the fix, then checks integer system/session JSON timestamps with positive/negative fractional offsets, Date constructors/static methods, and timer precision after the fix. The native smoke test also requires integer `Date.now()`.
+
+Switch cloud saving is a release blocker until the maintainer repeats save/quit and verifies progress in a freshly loaded browser. Rejected RC4 progress may still exist only in the local profile; a private PC backup of local storage was retained and is excluded from source/releases. No account credentials or save contents belong in public artifacts. Existing cached RC4 saves can still contain fractional fields; use the official server-data refresh if offered for a clean regression test. Do not silently rewrite or upload old local saves.
+
+Fresh RC5 installs default to Touch pad Fade, with direct menu taps enabled. Existing input preferences are preserved. Online game Settings remain stock; there is no injected touch-settings page.
+
 ## 0.2.0-rc4 continuous-motion correction
 
 The maintainer tested RC3 on Retroid and reported that the pad was not smooth or responsive. Investigation reproduced a native renderer bug: every new thumb position restarted the transition at zero progress, preventing visual motion during an uninterrupted slide. RC4 samples the running transition before retargeting. A regression using the actual GLES overlay checks full circular gestures at 30/60/120 Hz, immediate native direction changes and zero D-pad texture uploads. The regression fails on the old renderer and passes after correction. On 2026-11-02 the maintainer tested installed RC4 on Retroid and reported that it now felt smooth. Switch feel testing remains pending.

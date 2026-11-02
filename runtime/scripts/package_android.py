@@ -56,7 +56,7 @@ with zipfile.ZipFile(build/'unsigned.apk','a',compression=zipfile.ZIP_DEFLATED) 
     for path in (root/'js').glob('*.js'):
         if path.name!='debug.js':z.write(path,'assets/runtime/js/'+path.name)
     z.write(root/'third_party/cacert.pem','assets/cacert.pem')
-    z.writestr('assets/config.txt','audio=1\nlog=1\nosk=1\ndirecttouch=1\ntouchpad=0\n')
+    z.writestr('assets/config.txt','audio=1\nlog=1\nosk=1\ndirecttouch=1\ntouchpad=1\n')
 run('align',[tools/'zipalign.exe','-f','-p','4',build/'unsigned.apk',build/'aligned.apk'])
 signing=Path(os.environ.get('LOCALAPPDATA',str(Path.home())))/'PokeRogueNX/signing'
 signing.mkdir(parents=True,exist_ok=True)

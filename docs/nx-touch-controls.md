@@ -31,7 +31,7 @@ The cross/chevron paths and pose constants are retained: 96% stable visual wrapp
 
 Seven small vector textures are warmed before first input. A cached GPU framebuffer composites their group opacity correctly. Rocking and lighting change GPU geometry/uniforms; D-pad movement does not rasterize/re-upload the control image. Static poses reuse their GPU composite. Action layers update only on pressed state, visibility or dimensions. Fully faded controls add no rendering loop, while their hit regions can still wake on the first touch.
 
-The launcher cycles **Touch pad: Off / Fade / Always**. Fade hides after two seconds without fingers down, using the original 180 ms fade. Direct menu taps remain a separate option. Previous `touchpad=1` preferences now mean Fade; `2` means Always. Fresh-install default stays Off.
+The launcher cycles **Touch pad: Off / Fade / Always**. Fade hides after two seconds without fingers down, using the original 180 ms fade. Direct menu taps remain a separate option. Previous `touchpad=1` preferences now mean Fade; `2` means Always. RC5 fresh installs default to Fade; existing Off/Fade/Always preferences are preserved.
 
 ## Verification and remaining device work
 

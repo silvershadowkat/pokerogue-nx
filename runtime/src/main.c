@@ -69,6 +69,9 @@ host_config g_cfg = {
     .data_dir = DEFAULT_DATA_DIR,
     .control = DEFAULT_CONTROL,
     .direct_touch = true,
+#if defined(__SWITCH__) || defined(__ANDROID__)
+    .touch_pad = true, // Fresh installs use Fade; config preserves user choices.
+#endif
 #ifdef __SWITCH__
     .win_w = 1280,
     .win_h = 720,
@@ -445,7 +448,7 @@ static void control_poll(JSContext *ctx, bool *quit) {
 
 const char *host_version_string(void) {
 #if defined(__SWITCH__) || defined(__ANDROID__)
-    return "PokeRogue NX 0.2.0-rc4 | Vita runtime " PKR_VERSION " (" PKR_COMMIT ")";
+    return "PokeRogue NX 0.2.0-rc5 | Vita runtime " PKR_VERSION " (" PKR_COMMIT ")";
 #else
     return "PokeRogue Native " PKR_VERSION PKR_FLAVOR " (" PKR_COMMIT ")";
 #endif
