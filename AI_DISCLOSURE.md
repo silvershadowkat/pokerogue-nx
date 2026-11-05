@@ -10,6 +10,10 @@ projects and retain their original credits and license terms. This statement
 describes this port's contributions, not an audit of every upstream asset's
 creation process.
 
+The 0.3.0 candidate reuses the maintainer's existing P/R/SS Poké Ball app icon
+unchanged, at their request. No new artwork was generated for this update.
+The icon's earlier creation process is not being represented as audited here.
+
 AI assistance is not a substitute for validation or a guarantee of correctness.
 The maintainer is responsible for the published changes. Build checks and
 automated tests are reported separately from manual device testing:

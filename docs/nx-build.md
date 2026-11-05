@@ -1,6 +1,6 @@
 # Building PokeRogue NX
 
-This is a fork of [krappaU/pokerogue-vita](https://github.com/krappaU/pokerogue-vita). Release APK/NRO files contain the native client, runtime scripts and CA certificates. They do not include game code, sprites, audio, fonts or launcher artwork. No game build or asset checkout is needed for release packaging.
+This is a fork of [krappaU/pokerogue-vita](https://github.com/krappaU/pokerogue-vita). Release APK/NRO files contain the native client, runtime scripts, CA certificates and the maintainer's existing app icon. They do not include gameplay, sprites, audio, fonts or launcher artwork. No game build or asset checkout is needed for client packaging. Debug game packs are built separately using [the pinned source workflow](../debug/README.md).
 
 ## Switch
 
@@ -19,7 +19,7 @@ Output: `runtime/build-switch/pokerogue-nx.nro`. `PKR_DEBUG`, `PKR_DEV` and `PKR
 From the repository root:
 
 ```sh
-python3 scripts/stage_switch.py --output outputs/PokeRogue-NX-0.2.0-rc7-Switch
+python3 scripts/stage_switch.py --output outputs/PokeRogue-0.3.0-beta.1-Switch
 ```
 
 Copy the resulting **switch folder** to the SD root. No unzip step. Launch `switch/pokerogue-nx/pokerogue-nx.nro` through full application mode (hold R while starting a game to enter hbmenu). Applet mode is rejected. Preserve existing saves.
@@ -36,9 +36,9 @@ python runtime/scripts/build_android.py
 python runtime/scripts/package_android.py
 ```
 
-Output: `runtime/build-android/apk/PokeRogue-NX-0.2.0-rc7-android-arm64.apk`. Package ID `com.silvershadow.pokeroguenx`; this installs separately from the older native test. The APK is non-debuggable, disallows backups and cleartext HTTP, and requests Internet access. Document import/export uses Android's system picker without broad storage permissions.
+Output: `runtime/build-android/apk/PokeRogue-0.3.0-beta.1-android-arm64.apk`. Package ID `com.silvershadow.pokeroguenx`; this installs separately from the older native test. The APK is non-debuggable, disallows backups and cleartext HTTP, and requests Internet access. Document import/export uses Android's system picker without broad storage permissions.
 
-The packager creates/reuses a local signing key under `%LOCALAPPDATA%/PokeRogueNX/signing`. Keep the key/password private and retain them for updates; they are not release artifacts. A different maintainer's key produces an independently signed app.
+The packager requires the existing release key in the maintainer's durable private signing directory, or `PKR_SIGNING_DIR`. It does not create keys and stops if the public certificate differs from the pinned identity. See [private backup locations and the one-time RC7 migration](android-signing.md). Never distribute key/password files.
 
 ## Content and updates
 

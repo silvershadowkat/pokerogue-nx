@@ -578,6 +578,8 @@ bool net_is_local(const char *url) {
 // its 34,000 files took hours on the Vita's memory card.
 static mz_zip_archive local_zip;
 static int local_zip_state; // 0 not opened, 1 open, -1 failed
+static mz_zip_archive base_zip;
+static int base_zip_state;
 #ifdef __ANDROID__
 // SDL provides random access to the downloaded archive. The legacy offline-test
 // build can also use an APK asset, but client releases never bundle that archive.
@@ -614,14 +616,35 @@ static char *zip_read_locked(const char *name, size_t *len) {
 #else
         local_zip_state = mz_zip_reader_init_file(&local_zip, g_cfg.local_dir, 0) ? 1 : -1;
 #endif
+        if(local_zip_state>0){
+            bool debug=mz_zip_reader_locate_file(&local_zip,"pokerogue-debug.json",NULL,0)>=0;
+            if(!client_archive_allowed(g_cfg.client_mode,debug)){
+                host_log("[local] archive rejected for %s profile",client_mode_name(g_cfg.client_mode));
+                mz_zip_reader_end(&local_zip);local_zip_state=-1;
+            }
+        }
         if (local_zip_state < 0) host_log("[local] can't open %s as a zip", g_cfg.local_dir);
         else host_log("[local] %s: %u files", g_cfg.local_dir, (unsigned)mz_zip_reader_get_num_files(&local_zip));
     }
     if (local_zip_state < 0) return NULL;
+    mz_zip_archive *archive=&local_zip;
     int idx = mz_zip_reader_locate_file(&local_zip, name, NULL, 0);
+    // The Debug overlay provides every executable module. Unchanged images,
+    // audio and localization can fall through to the pinned stock ZIP. A
+    // missing JS module fails visibly instead of mixing incompatible builds.
+    const char *extension=strrchr(name,'.');
+    bool executable=extension&&(!strcmp(extension,".js")||!strcmp(extension,".mjs")||!strcmp(extension,".html")||!strcmp(extension,".css"));
+    if(idx<0&&!executable&&g_cfg.client_mode==PKR_ENHANCED&&g_cfg.local_base){
+        if(!base_zip_state){
+            memset(&base_zip,0,sizeof base_zip);
+            base_zip_state=mz_zip_reader_init_file(&base_zip,g_cfg.local_base,0)?1:-1;
+            if(base_zip_state>0&&mz_zip_reader_locate_file(&base_zip,"pokerogue-debug.json",NULL,0)>=0){mz_zip_reader_end(&base_zip);base_zip_state=-1;}
+        }
+        if(base_zip_state>0){archive=&base_zip;idx=mz_zip_reader_locate_file(archive,name,NULL,0);}
+    }
     if (idx < 0) return NULL;
     size_t size = 0;
-    char *d = mz_zip_reader_extract_to_heap(&local_zip, (mz_uint)idx, &size, 0);
+    char *d = mz_zip_reader_extract_to_heap(archive, (mz_uint)idx, &size, 0);
     if (!d) {
         host_log("[local] can't read %s from the zip (out of memory?)", name);
         return NULL;
@@ -654,6 +677,9 @@ static char *local_read(const char *url, size_t *len) {
     if (strstr(rel, "..")) return NULL;
     if (local_is_zip()) return zip_read(rel[0] ? rel : "index.html", len);
     char path[1600];
+    char marker[1600];snprintf(marker,sizeof marker,"%s/pokerogue-debug.json",g_cfg.local_dir);
+    FILE *mark=fopen(marker,"rb");bool debug=mark!=NULL;if(mark)fclose(mark);
+    if(!client_archive_allowed(g_cfg.client_mode,debug))return NULL;
     snprintf(path, sizeof path, "%s/%s", g_cfg.local_dir, rel[0] ? rel : "index.html");
     FILE *f = fopen(path, "rb");
     if (!f) return NULL;
@@ -1071,7 +1097,7 @@ static JSValue n_http(JSContext *ctx, JSValueConst this_val, int argc, JSValueCo
     }
     // Offline profiles never send gameplay or imported data to an account API.
     // Installer/update requests use net_get_sync/net_download_file separately.
-    if (!client_can_connect_account(g_cfg.client_mode) && !net_is_local(url)) {
+    if (!client_can_connect_account(g_cfg.client_mode) && !net_is_local(url) && !client_can_fetch_public(g_cfg.client_mode,method,url)) {
         JS_FreeCString(ctx, method);
         JS_FreeCString(ctx, url);
         return JS_ThrowTypeError(ctx, "Network access is disabled in offline mode");

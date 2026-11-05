@@ -1,6 +1,6 @@
 # PokeRogue NX
 
-Nintendo Switch and Android adaptation of **[krappaU’s PokeRogue Vita](https://github.com/krappaU/pokerogue-vita)**. One app offers Online and Offline; Debug is reserved for a later release. **No game files or game artwork are bundled in the APK/NRO.**
+Nintendo Switch and Android adaptation of **[krappaU’s PokeRogue Vita](https://github.com/krappaU/pokerogue-vita)**. The 0.3.0-beta.1 development candidate adds isolated Debug to Online and Offline. **No game files are bundled in the APK/NRO.** The app reuses the maintainer's existing P/R/SS Poké Ball icon.
 
 krappaU’s native runtime, QuickJS integration, browser APIs, GPU rendering, audio and optimizations are this project's foundation. This is an adaptation of that work. Gameplay and assets belong to **[official PokeRogue and its contributors](https://github.com/pagefaultgames/pokerogue)**.
 
@@ -14,7 +14,7 @@ Switch: put `pokerogue-nx.nro` and `config.txt` in `sdmc:/switch/pokerogue-nx/`,
 
 - **Online:** loads live pokerogue.net, including its normal account login and server APIs. Android login, authenticated Daily Run and server-save refresh have been reported working by the maintainer. Switch/PC online save synchronization is confirmed in both directions; remaining Switch Daily/offline/stability checks are documented below. No cheats, developer evaluation channel, or save-file import.
 - **Offline:** downloads the normal offline distribution used by [Admiral-Billy’s app](https://github.com/Admiral-Billy/Pokerogue-App) when requested. Plays directly from one `game.zip`, without extracting tens of thousands of files. No account-server access or cheats.
-- **Debug:** visible but unavailable in 0.2.0-rc7. Isolated SilverShadow cheats, enhancements and custom modes are planned. No minigames or Google Drive integration in this release.
+- **Debug:** unavailable in the public 0.2.0-rc7 release. The 0.3.0-beta.1 development candidate adds isolated SilverShadow cheats, Pokemon/move editors and custom seeded modes. No minigames, Google Drive or legacy controllers are imported. See [Debug status and update channel](docs/debug-mode.md).
 
 The selector uses the official plains background, logo, window, cursor and Emerald font, downloaded and cached on first use. Mode-specific saves, cookies and caches live in separate profiles. Close and reopen the app to choose another mode; the JavaScript runtime is never reused across modes.
 
@@ -36,6 +36,8 @@ Offline checks for an update and offers it in the selector. Downloads can resume
 - [Mode boundaries and roadmap](docs/nx-modes.md)
 - [Credits and provenance](docs/nx-credits.md)
 - [AI assistance disclosure](AI_DISCLOSURE.md)
+- [Debug source mapping and rebuild](debug/README.md)
+- [Android signing identity and migration](docs/android-signing.md)
 
 ## Architecture
 

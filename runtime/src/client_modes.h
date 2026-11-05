@@ -8,3 +8,5 @@ bool client_profile_path(char *out,size_t size,const char *root,pkr_client_mode 
 bool client_can_import(pkr_client_mode mode);
 bool client_can_connect_account(pkr_client_mode mode);
 bool client_can_load_enhancements(pkr_client_mode mode);
+bool client_archive_allowed(pkr_client_mode mode,bool debug_archive);
+bool client_can_fetch_public(pkr_client_mode mode,const char *method,const char *url);

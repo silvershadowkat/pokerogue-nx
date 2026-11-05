@@ -20,9 +20,13 @@ the gameplay code, game data, and upstream asset/localization references.
 See the original credits in the `game/README.md`, the assets and locales repositories,
 and their individual attribution/license files.
 
-This port takes official gameplay updates directly from Pagefault Games. Scooom's
-offline fork and the maintainer's earlier mod/minigames project are not inputs
-to this new build. Those projects remain separate.
+Online and stock Offline take gameplay from the official source/distribution.
+The separately compiled 0.3.0 Debug overlay adapts the maintainer's local
+[SilverShadow offline enhancements](https://github.com/silvershadowkat/pokerogue-offline),
+originally based on Scooom's offline fork. Its editors, cheats and custom seeded
+runs retain their source history and mapping in `debug/`; its wrapper, minigames,
+Google Drive and legacy controller implementation are excluded. Those Debug
+changes are never loaded into Online or stock Offline.
 
 ## Offline distribution
 
@@ -43,6 +47,10 @@ Maintained by [silvershadowkat](https://github.com/silvershadowkat), with AI cod
 and testing assistance disclosed in [AI_DISCLOSURE.md](../AI_DISCLOSURE.md).
 No AI-generated game assets have been added by this port. Switch hardware tests
 and feedback are provided by the maintainer.
+
+The 0.3.0 candidate reuses the maintainer-selected P/R/SS Poké Ball app icon from
+the earlier project unchanged. No new icon or other artwork was generated for
+this update; this is not a claim about that pre-existing icon's creation process.
 
 ## SilverShadow touch controller
 

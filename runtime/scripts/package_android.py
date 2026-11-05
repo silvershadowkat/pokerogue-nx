@@ -2,7 +2,12 @@
 Outputs stay in build-android until staged with device-test evidence.
 """
 from pathlib import Path
-import os, subprocess, zipfile, shutil, json, hashlib, secrets, xml.etree.ElementTree as ET
+import os, subprocess, zipfile, shutil, json, hashlib, argparse, xml.etree.ElementTree as ET
+
+parser=argparse.ArgumentParser()
+parser.add_argument('--test-signing',action='store_true',help='Local test key only; not an upgrade for public APKs.')
+parser.add_argument('--test-staging',action='store_true',help='Temporary debuggable package for test content installation.')
+args=parser.parse_args()
 
 root = Path(__file__).resolve().parents[1]
 sdk = Path(os.environ.get('ANDROID_HOME',str(Path.home()/'AppData/Local/Android/Sdk')))
@@ -12,7 +17,24 @@ tools = sdk/'build-tools/36.0.0'
 build = root/'build-android/apk'
 build.mkdir(parents=True,exist_ok=True)
 version = ET.parse(root/'android/AndroidManifest.xml').getroot().attrib['{http://schemas.android.com/apk/res/android}versionName'].removesuffix('-native-test')
+signing=Path(os.environ.get('PKR_SIGNING_DIR',str(Path.home()/'Documents/Codex/Secrets/PokeRogue')))
+if args.test_signing:signing=Path(os.environ.get('LOCALAPPDATA',str(Path.home())))/'PokeRogueNX/signing/test-20261105'
+key=signing/('pokerogue-nx.jks' if args.test_signing else 'pokerogue-android-release.jks')
+password_file=signing/'keystore-password.txt'
+if not key.is_file() or not password_file.is_file():
+    raise SystemExit('Signing key/password missing. Restore the existing key; this script never creates a replacement.')
+manifest=root/'android/AndroidManifest.xml'
+if args.test_staging:
+    text=manifest.read_text(encoding='utf8')
+    assert text.count('android:debuggable="false"')==1
+    manifest=build/'AndroidManifest-staging.xml'
+    manifest.write_text(text.replace('android:debuggable="false"','android:debuggable="true"'),encoding='utf8')
 env = os.environ.copy();env['JAVA_HOME']=str(java);env['PATH']=str(java/'bin')+os.pathsep+env['PATH']
+env['PKR_SIGNING_PASSWORD']=password_file.read_text(encoding='utf8').strip()
+expected_cert=json.loads((root/'android/release-signing.json').read_text(encoding='utf8'))['certificateSha256']
+if not args.test_signing:
+    cert=subprocess.check_output([str(java/'bin/keytool.exe'),'-exportcert','-keystore',str(key),'-storepass:env','PKR_SIGNING_PASSWORD','-alias','pokeroguenx'],env=env,timeout=30)
+    if hashlib.sha256(cert).hexdigest()!=expected_cert:raise SystemExit('Wrong release signing key. Packaging stopped before changing any APK.')
 
 def run(name,args):
     with (build/(name+'.log')).open('w',encoding='utf8') as log:
@@ -22,15 +44,13 @@ def run(name,args):
     print(name,'OK',flush=True)
 
 res=build/'res/drawable';res.mkdir(parents=True,exist_ok=True)
-# A code-defined app mark, not a game asset or generated bitmap artwork.
-(res/'icon.xml').write_text('''<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
-<path android:fillColor="#111827" android:pathData="M0,0h108v108h-108z"/>
-<path android:fillColor="#426C91" android:pathData="M22,18h64v72h-64z"/>
-<path android:fillColor="#F1F5F9" android:pathData="M38,32h23c13,0 19,7 19,19s-7,19 -19,19h-10v13h-13zM51,44v14h10c4,0 6,-2 6,-7s-2,-7 -6,-7z"/>
-</vector>''',encoding='utf8')
+# Reuse the maintainer's existing P/R/SS icon without generating artwork.
+legacy_icon=res/'icon.xml'
+if legacy_icon.exists():legacy_icon.unlink()
+shutil.copyfile(root/'branding/icon.png',res/'icon.png')
 run('resources',[tools/'aapt2.exe','compile','--dir',build/'res','-o',build/'resources.zip'])
 androidjar=sdk/'platforms/android-35/android.jar'
-run('link',[tools/'aapt2.exe','link','-o',build/'base.apk','--manifest',root/'android/AndroidManifest.xml','-I',androidjar,'-R',build/'resources.zip','--auto-add-overlay'])
+run('link',[tools/'aapt2.exe','link','-o',build/'base.apk','--manifest',manifest,'-I',androidjar,'-R',build/'resources.zip','--auto-add-overlay'])
 classes=build/'classes';classes.mkdir(exist_ok=True)
 # Keep the upstream SDL Java sources intact. Apply the native parser's required
 # stack size to a generated copy, with an exact-match assertion.
@@ -58,19 +78,16 @@ with zipfile.ZipFile(build/'unsigned.apk','a',compression=zipfile.ZIP_DEFLATED) 
     z.write(root/'third_party/cacert.pem','assets/cacert.pem')
     z.writestr('assets/config.txt','audio=1\nlog=1\nosk=1\ndirecttouch=1\ntouchpad=1\n')
 run('align',[tools/'zipalign.exe','-f','-p','4',build/'unsigned.apk',build/'aligned.apk'])
-signing=Path(os.environ.get('LOCALAPPDATA',str(Path.home())))/'PokeRogueNX/signing'
-signing.mkdir(parents=True,exist_ok=True)
-key=signing/'pokerogue-nx.jks'
-password_file=signing/'keystore-password.txt'
-if not password_file.exists():password_file.write_text(secrets.token_urlsafe(32),encoding='utf8')
 env['PKR_SIGNING_PASSWORD']=password_file.read_text(encoding='utf8').strip()
-key.parent.mkdir(parents=True,exist_ok=True)
-if not key.exists():run('key',[java/'bin/keytool.exe','-genkeypair','-keystore',key,'-storepass:env','PKR_SIGNING_PASSWORD','-keypass:env','PKR_SIGNING_PASSWORD','-alias','pokeroguenx','-keyalg','RSA','-keysize','3072','-validity','10000','-dname','CN=SilverShadow PokeRogue NX'])
-apk=build/f'PokeRogue-NX-{version}-android-arm64.apk'
+suffix=('-test-signed' if args.test_signing else '')+('-staging' if args.test_staging else '')
+apk=build/f'PokeRogue-{version}-android-arm64{suffix}.apk'
 run('sign',[java/'bin/java.exe','-Xmx512m','-jar',tools/'lib/apksigner.jar','sign','--ks',key,'--ks-key-alias','pokeroguenx','--ks-pass','env:PKR_SIGNING_PASSWORD','--key-pass','env:PKR_SIGNING_PASSWORD','--out',apk,build/'aligned.apk'])
 run('verify',[java/'bin/java.exe','-jar',tools/'lib/apksigner.jar','verify','--verbose',apk])
+certs=subprocess.check_output([str(java/'bin/java.exe'),'-jar',str(tools/'lib/apksigner.jar'),'verify','--print-certs',str(apk)]).decode('utf8')
+if not args.test_signing and expected_cert not in certs:
+    raise SystemExit('Certificate differs from the pinned release identity. Do not distribute this APK.')
 with zipfile.ZipFile(apk) as z:
     assert 'assets/game.zip' not in z.namelist()
     assert 'assets/runtime/js/debug.js' not in z.namelist()
 with apk.open('rb') as f:digest=hashlib.file_digest(f,'sha256').hexdigest()
-print(json.dumps({'apk':str(apk),'bytes':apk.stat().st_size,'sha256':digest,'hardwareTested':False}),flush=True)
+print(json.dumps({'apk':str(apk),'bytes':apk.stat().st_size,'sha256':digest,'hardwareTested':False,'releaseSigning':not args.test_signing,'stagingOnly':args.test_staging}),flush=True)

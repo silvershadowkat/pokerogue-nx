@@ -1,0 +1,334 @@
+{
+  "schemaVersion": 1,
+  "legacyRepository": "https://github.com/silvershadowkat/pokerogue-offline",
+  "legacyOfficialBase": "0d94c5bbbc7a4fc67014c480e31dab1cfdf7ceb4",
+  "legacyLocalPayloads": true,
+  "settings": [
+    {
+      "key": "Shop_Animations",
+      "label": "Shop Animations",
+      "category": "Presentation",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_Free_Shop_Items",
+      "label": "Free Shop Items",
+      "category": "SHOP",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_Free_Rerolls",
+      "label": "Free Rerolls",
+      "category": "SHOP",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_Money_Multiplier",
+      "label": "Money Multiplier",
+      "category": "SHOP",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_Claim_All_Rewards",
+      "label": "Reward Claim Mode",
+      "category": "REWARDS",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_Max_Luck",
+      "label": "Max Luck (SSS)",
+      "category": "REWARDS",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_Exp_Multiplier",
+      "label": "EXP Multiplier",
+      "category": "PROGRESS",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_Candy_Jar_Count",
+      "label": "Candy Jar Count",
+      "category": "PROGRESS",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_Starter_Candy_Multiplier",
+      "label": "Pokemon Candy Multiplier",
+      "category": "PROGRESS",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_Candy_Costs",
+      "label": "Candy Costs",
+      "category": "PROGRESS",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_Starter_Points_60",
+      "label": "60 Starter Points",
+      "category": "TEAM",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_Allow_Duplicate_Starters",
+      "label": "Allow Duplicate Starters",
+      "category": "TEAM",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_Starting_Level",
+      "label": "Starting Level",
+      "category": "TEAM",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_Unlock_Starter_On_Select",
+      "label": "Unlock Starter on Select",
+      "category": "TEAM",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_All_Starters_Pokerus",
+      "label": "All Starters Have Pokerus",
+      "category": "TEAM",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_Pokemon_Editor_Mode",
+      "label": "Pokemon Editor",
+      "category": "TEAM",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_Free_Egg_Pulls",
+      "label": "Free Egg Gacha Pulls",
+      "category": "GEN / GACHA",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_Rare_Eggs",
+      "label": "Rare Eggs",
+      "category": "GEN / GACHA",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_Instant_Hatch",
+      "label": "Instant Hatch",
+      "category": "GEN / GACHA",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_Shiny_Rate",
+      "label": "Shiny Rate",
+      "category": "GEN / GACHA",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_Always_Shiny",
+      "label": "Always Shiny",
+      "category": "GEN / GACHA",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_Form_Change_Items",
+      "label": "Form Change Items",
+      "category": "GEN / GACHA",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_Guaranteed_Capture",
+      "label": "Guaranteed Capture",
+      "category": "CAPTURE",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_Unlimited_Pokeballs",
+      "label": "Unlimited Poke Balls",
+      "category": "CAPTURE",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_Catch_Trainer_Pokemon",
+      "label": "Catch Trainer Pokemon",
+      "category": "CAPTURE",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_Catch_Double_Battle",
+      "label": "Catch Pokemon in Double Battles",
+      "category": "CAPTURE",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_Catch_Boss_Shields",
+      "label": "Catch Bosses Through Shields",
+      "category": "CAPTURE",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_Infinite_Player_Hp",
+      "label": "Infinite Player HP",
+      "category": "BATTLE",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_Infinite_Player_Pp",
+      "label": "Infinite Player PP",
+      "category": "BATTLE",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_Player_Ohko",
+      "label": "Player OHKO",
+      "category": "BATTLE",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_Never_Miss",
+      "label": "Never Miss",
+      "category": "BATTLE",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_Always_Critical_Hit",
+      "label": "Always Critical Hit",
+      "category": "BATTLE",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_Always_Move_First",
+      "label": "Always Move First",
+      "category": "BATTLE",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_No_Recharge_Turns",
+      "label": "No Charge / Recharge Turns",
+      "category": "BATTLE",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_Run_Never_Fails",
+      "label": "Run Never Fails",
+      "category": "BATTLE",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_Full_Heal_After_Battle",
+      "label": "Full Heal After Every Battle",
+      "category": "BATTLE",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_Ignore_Evolution_Requirements",
+      "label": "Ignore Evolution Requirements",
+      "category": "EVOLUTION / TM",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    },
+    {
+      "key": "Offline_Unlimited_Tm_Compatibility",
+      "label": "Unlimited TM Compatibility",
+      "category": "EVOLUTION / TM",
+      "source": "src/debug/sandbox-settings.ts",
+      "ported": true,
+      "manualCoverage": "basic smoke only; individual cheats not all tested"
+    }
+  ],
+  "additionalFeatures": [
+    "Full Pokemon Editor",
+    "Unrestricted and legitimate move editors",
+    "Saved build library, restore and undo",
+    "Per-copy duplicate starter drafts",
+    "Official Daily archive",
+    "Deterministic Offline Daily/date selector",
+    "Boss Rush and Boss Rush (H)",
+    "Custom seed runs",
+    "Random5/10/20/30/50/100",
+    "Versioned seeded snapshots and run history",
+    "Gacha Calendar",
+    "Manual game save export/import",
+    "Local Debug data reset"
+  ],
+  "excluded": [
+    "Minigames",
+    "Legacy controller/touch code and artwork",
+    "Google Drive/OAuth backup",
+    "Legacy wrapper and nx.js optimizations",
+    "Legacy app updater"
+  ]
+}

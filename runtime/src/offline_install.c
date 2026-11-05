@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Downloads the offline game to <data>/game.zip, from the start screen.
+// Downloads versioned stock bases and a separate Debug overlay from the selector.
 //
 // The build is the one Admiral-Billy's PokeRogue App uses for its offline mode: game.zip from the
-// latest release of github.com/Admiral-Billy/pokerogue (about 530 MB). It is downloaded to
-// <data>/game.zip.part (an interrupted download resumes) and renamed when complete. The game is
-// played straight from the zip (net.c): unpacking its 34,000 files took hours on the Vita.
+// latest release of github.com/Admiral-Billy/pokerogue (about 530 MB). Interrupted
+// downloads resume. Validated bases live under games/<version>.zip; Debug pins a
+// matching base and supplies debug-game.zip. net.c plays directly from the ZIPs.
 
 #include <pthread.h>
 #include <stdio.h>
@@ -19,6 +19,8 @@
 
 #define RELEASE_API "https://api.github.com/repos/Admiral-Billy/pokerogue/releases/latest"
 #define ASSET_NAME "game.zip"
+#define DEBUG_ASSET_NAME "debug-pack.zip"
+#define DEBUG_API "https://api.github.com/repos/silvershadowkat/pokerogue-nx/releases/tags/debug-game"
 
 typedef struct {
     double t0, last_draw;
@@ -118,26 +120,29 @@ long long json_num(const char *from, const char *key) {
 // the installed version.
 #define CHECK_EVERY_S (6 * 3600)
 static pthread_mutex_t check_lock = PTHREAD_MUTEX_INITIALIZER;
-static char latest[64];   // newest release tag without "release-", "" while unknown
-static bool check_running;
+static char latest[2][64];   // newest release tag without "release-", "" while unknown
+static bool check_running[2];
 
 static const char *strip_tag(const char *tag) { return !strncmp(tag, "release-", 8) ? tag + 8 : tag; }
 
-static void latest_path(char *out, size_t n) { snprintf(out, n, "%s/offline-latest.txt", g_cfg.data_dir); }
+static void latest_path(char *out, size_t n,int channel) { snprintf(out, n, "%s/%s-latest.txt", g_cfg.app_dir,channel?"debug":"offline"); }
 
 static void *check_thread(void *arg) {
-    (void)arg;
+    int channel=(int)(intptr_t)arg;
     size_t len = 0;
     long status = 0;
-    char *json = net_get_threadsafe(RELEASE_API, &len, &status);
+    char *json = net_get_threadsafe(channel?DEBUG_API:RELEASE_API, &len, &status);
     char tag[64] = "";
-    if (json && status == 200 && json_str(json, "tag_name", tag, sizeof tag) &&
-        (strstr(json, "\"name\":\"" ASSET_NAME "\"") || strstr(json, "\"name\": \"" ASSET_NAME "\""))) {
+    const char *asset_name=channel?DEBUG_ASSET_NAME:ASSET_NAME;
+    char asset_pattern[100];snprintf(asset_pattern,sizeof asset_pattern,"\"name\":\"%s\"",asset_name);
+    char asset_pretty[100];snprintf(asset_pretty,sizeof asset_pretty,"\"name\": \"%s\"",asset_name);
+    if (json && status == 200 && json_str(json, channel?"name":"tag_name", tag, sizeof tag) && game_version_valid(channel?tag:strip_tag(tag)) &&
+        (strstr(json,asset_pattern)||strstr(json,asset_pretty))) {
         char path[700];
-        latest_path(path, sizeof path);
+        latest_path(path, sizeof path,channel);
         FILE *f = fopen(path, "w");
         if (f) {
-            fprintf(f, "%lld %s\n", (long long)time(NULL), strip_tag(tag));
+            fprintf(f, "%lld %s\n", (long long)time(NULL), channel?tag:strip_tag(tag));
             fclose(f);
         }
         host_log("[offline] latest release on GitHub: %s", tag);
@@ -145,47 +150,53 @@ static void *check_thread(void *arg) {
         host_log("[offline] update check failed (HTTP %ld)", status);
         tag[0] = 0;
     }
+    if(tag[0]&&!game_version_valid(channel?tag:strip_tag(tag)))tag[0]=0;
     free(json);
     pthread_mutex_lock(&check_lock);
-    if (tag[0]) snprintf(latest, sizeof latest, "%s", strip_tag(tag));
-    check_running = false;
+    if (tag[0]) snprintf(latest[channel], sizeof latest[channel], "%s", channel?tag:strip_tag(tag));
+    check_running[channel] = false;
     pthread_mutex_unlock(&check_lock);
     return NULL;
 }
 
-void offline_update_check_start(void) {
+static void game_update_check_start(int channel) {
     char path[700], tag[64] = "";
     long long when = 0;
-    latest_path(path, sizeof path);
+    latest_path(path, sizeof path,channel);
     FILE *f = fopen(path, "r");
     if (f) {
         if (fscanf(f, "%lld %63s", &when, tag) != 2) tag[0] = 0;
         fclose(f);
     }
     pthread_mutex_lock(&check_lock);
-    if (tag[0]) snprintf(latest, sizeof latest, "%s", tag);
+    if (tag[0]) snprintf(latest[channel], sizeof latest[channel], "%s", tag);
     bool due = !tag[0] || time(NULL) - when > CHECK_EVERY_S || time(NULL) < when;
-    if (due && !check_running) {
+    if (due && !check_running[channel]) {
         pthread_t t;
         pthread_attr_t attr;
         pthread_attr_init(&attr);
         pthread_attr_setstacksize(&attr, 256 * 1024); // TLS handshakes need a deep stack
-        check_running = pthread_create(&t, &attr, check_thread, NULL) == 0;
-        if (check_running) pthread_detach(t);
+        check_running[channel] = pthread_create(&t, &attr, check_thread, (void *)(intptr_t)channel) == 0;
+        if (check_running[channel]) pthread_detach(t);
         pthread_attr_destroy(&attr);
     }
     pthread_mutex_unlock(&check_lock);
 }
 
 // The newer release's tag, or NULL (no update known, or `installed` is the latest).
-const char *offline_update_available(const char *installed) {
-    static char out[64];
+static const char *game_update_available(const char *installed,int channel) {
+    static char out[2][64];
     pthread_mutex_lock(&check_lock);
-    bool newer = latest[0] && installed && installed[0] && strcmp(latest, installed) != 0;
-    if (newer) snprintf(out, sizeof out, "%s", latest);
+    bool newer = latest[channel][0] && installed && installed[0] && strcmp(latest[channel], installed) != 0;
+    if (newer) snprintf(out[channel], sizeof out[channel], "%s", latest[channel]);
     pthread_mutex_unlock(&check_lock);
-    return newer ? out : NULL;
+    return newer ? out[channel] : NULL;
 }
+
+void offline_update_check_start(void){game_update_check_start(0);}
+void debug_update_check_start(void){game_update_check_start(1);}
+const char *offline_update_available(const char *v){return game_update_available(v,0);}
+const char *debug_update_available(const char *v){return game_update_available(v,1);}
 
 // Asks a yes/no question: X yes, O no.
 bool ui_confirm(const char *msg) {
@@ -221,115 +232,79 @@ bool ui_download(const char *url, const char *path, const char *what, char *err,
 
 // Downloads the latest release to <data>/game.zip (replacing an installed one only once the
 // download is complete). Returns true when <data>/game.zip is ready.
-bool offline_install(void) {
-    char err[600] = "";
-    overlay_present("PokeRogue\n\nLooking for the offline game on GitHub...");
-    size_t len = 0;
-    long status = 0;
-    char *json = net_get_sync(RELEASE_API, &len, &status);
-    if (!json || status != 200) {
-        free(json);
-        snprintf(err, sizeof err, "Couldn't reach GitHub (%s).\nCheck that Wi-Fi is connected.", status ? "HTTP error" : "no connection");
-        ui_message_wait(err);
-        return false;
+// Keep immutable base archives by version. Updating Offline cannot strand a
+// Debug pack on newer, incompatible assets, and both modes share the same ZIP.
+static bool regular_archive(const char *path){
+    mz_zip_archive z={0};if(!mz_zip_reader_init_file(&z,path,0))return false;
+    bool ok=mz_zip_reader_locate_file(&z,"index.html",NULL,0)>=0&&mz_zip_reader_locate_file(&z,"pokerogue-debug.json",NULL,0)<0;
+    mz_zip_reader_end(&z);return ok;
+}
+static bool activate_base(const char *version){
+    char record[1000];snprintf(record,sizeof record,"%s/game-current.txt",g_cfg.app_dir);
+    return storage_write_file(record,version,strlen(version));
+}
+static bool game_install(bool debug,const char *requested,bool activate){
+    char api[1200],err[600]="";
+    if(requested&&!game_version_valid(requested))return false;
+    if(debug)snprintf(api,sizeof api,"%s",DEBUG_API);
+    else if(requested)snprintf(api,sizeof api,"https://api.github.com/repos/Admiral-Billy/pokerogue/releases/tags/release-%s",requested);
+    else snprintf(api,sizeof api,"%s",RELEASE_API);
+    char games[1000];snprintf(games,sizeof games,"%s/games",g_cfg.app_dir);mkdir(games,0777);
+    // A previously downloaded/pinned base needs no network or duplicate copy.
+    char game_zip[1100];
+    if(!debug&&requested&&game_base_path(game_zip,sizeof game_zip,g_cfg.app_dir,requested)){
+        storage_recover_previous(game_zip);
+        if(regular_archive(game_zip))return !activate||activate_base(requested);
+        char old[1000],version[64];
+        if(game_find_offline(old,sizeof old,version,sizeof version,g_cfg.app_dir)&&!strcmp(version,requested)&&regular_archive(old)){
+            if(!activate_base(requested))return false;
+            return storage_install_file(old,game_zip);
+        }
     }
-    char tag[64] = "?", url[1024] = "";
-    json_str(json, "tag_name", tag, sizeof tag);
-    const char *asset = strstr(json, "\"name\":\"" ASSET_NAME "\"");
-    if (!asset) asset = strstr(json, "\"name\": \"" ASSET_NAME "\"");
-    long long size = asset ? json_num(asset, "size") : -1;
-    if (!asset || !json_str(asset, "browser_download_url", url, sizeof url)) {
-        free(json);
-        ui_message_wait("The latest release has no game.zip.\nTry again later.");
-        return false;
-    }
+    overlay_present(debug?"PokeRogue\n\nLooking for a compatible Debug patch pack...":"PokeRogue\n\nLooking for the offline game...");
+    size_t length=0;long status=0;char *json=net_get_sync(api,&length,&status);
+    if(!json||status!=200){free(json);ui_message_wait(debug?"The Debug patch channel is not available yet.\nAn installed compatible Debug version remains available.":"Couldn't reach the offline game release.\nCheck Wi-Fi and try again.");return false;}
+    char tag[64]="",version[64]="",url[1200]="";
+    bool version_ok=json_str(json,debug?"name":"tag_name",tag,sizeof tag);
+    snprintf(version,sizeof version,"%s",debug?tag:strip_tag(tag));
+    version_ok=version_ok&&game_version_valid(version)&&(!requested||!strcmp(version,requested));
+    const char *asset_name=debug?DEBUG_ASSET_NAME:ASSET_NAME;
+    char pattern[100];snprintf(pattern,sizeof pattern,"\"name\":\"%s\"",asset_name);
+    const char *asset=strstr(json,pattern);
+    if(!asset){snprintf(pattern,sizeof pattern,"\"name\": \"%s\"",asset_name);asset=strstr(json,pattern);}
+    long long expected=asset?json_num(asset,"size"):-1;
+    bool url_ok=asset&&json_str(asset,"browser_download_url",url,sizeof url);
     free(json);
-
-    char zip_path[700], game_zip[700], version_path[700];
-    snprintf(zip_path, sizeof zip_path, "%s/game.zip.part", g_cfg.data_dir);
-    snprintf(game_zip, sizeof game_zip, "%s/game.zip", g_cfg.data_dir);
-    snprintf(version_path, sizeof version_path, "%s/game.zip.version", g_cfg.data_dir);
-    // A partial download of a different release can't be resumed.
-    char part_tag_path[720], part_tag[64] = "";
-    snprintf(part_tag_path, sizeof part_tag_path, "%s.tag", zip_path);
-    FILE *pt = fopen(part_tag_path, "r");
-    if (pt) {
-        if (!fgets(part_tag, sizeof part_tag, pt)) part_tag[0] = 0;
-        part_tag[strcspn(part_tag, "\r\n")] = 0;
-        fclose(pt);
+    if(!version_ok||!url_ok||expected<=0){ui_message_wait("This release has no valid compatible game package.\nThe installed version is kept.");return false;}
+    if(debug)snprintf(game_zip,sizeof game_zip,"%s/debug-game.zip",g_cfg.app_dir);
+    else if(!game_base_path(game_zip,sizeof game_zip,g_cfg.app_dir,version))return false;
+    if(!debug&&regular_archive(game_zip))return !activate||activate_base(version);
+    char partial[1200],part_tag[1300],previous[64]="";
+    snprintf(partial,sizeof partial,"%s.part",game_zip);snprintf(part_tag,sizeof part_tag,"%s.version",partial);
+    FILE *f=fopen(part_tag,"rb");if(f){fgets(previous,sizeof previous,f);fclose(f);}
+    if(strcmp(previous,version)){remove(partial);if(!storage_write_file(part_tag,version,strlen(version)))return false;}
+    struct stat st;long long done=stat(partial,&st)==0?st.st_size:0;
+    long long free_bytes=plat_free_space(g_cfg.app_dir);
+    if(free_bytes>=0&&free_bytes+done<expected+16*1024*1024){ui_message_wait("Not enough free space to download safely.\nThe installed game and local saves are kept.");return false;}
+    char what[200];snprintf(what,sizeof what,debug?"Downloading Debug patch pack (%s)":"Downloading shared game assets (%s)",version);
+    progress_ui progress={.t0=host_now_ms(),.what=what};
+    if(!net_download_file(url,partial,show_progress,&progress,err,sizeof err)){
+        if(strcmp(err,"cancelled"))ui_message_wait("The download stopped. Choose the mode again to resume it.");return false;
     }
-    if (strcmp(part_tag, tag)) {
-        remove(zip_path);
-        if ((pt = fopen(part_tag_path, "w"))) {
-            fputs(tag, pt);
-            fclose(pt);
-        }
-    }
-    long long need = size > 0 ? size + 16 * 1024 * 1024 : 0, have_part = 0, free_b = plat_free_space(g_cfg.data_dir);
-    struct stat st;
-    if (stat(zip_path, &st) == 0) have_part = st.st_size;
-    // An update needs room for both versions until it's done; if there isn't, the old one can go first.
-    if (free_b >= 0 && need > 0 && free_b + have_part < need && stat(game_zip, &st) == 0 &&
-        free_b + have_part + st.st_size >= need) {
-        snprintf(err, sizeof err, "Not enough space to keep the installed version while the update\n"
-                                  "downloads (%.0f MB needed, %.0f MB free).\n\nDelete the installed version first?\n"
-                                  "Your saves are kept. Until the download finishes,\nonly online play is available.",
-                 (need - have_part) / 1048576.0, free_b / 1048576.0);
-        if (!ui_confirm(err)) return false;
-        remove(game_zip);
-        remove(version_path);
-        free_b = plat_free_space(g_cfg.data_dir);
-    }
-    if (free_b >= 0 && need > 0 && free_b + have_part < need) {
-        snprintf(err, sizeof err, "Not enough space on the memory card:\n%.0f MB needed, %.0f MB free.",
-                 (need - have_part) / 1048576.0, free_b / 1048576.0);
-        ui_message_wait(err);
-        return false;
-    }
-    host_log("[offline] downloading %s (release %s, %.0f MB)", url, tag, size / 1048576.0);
-    char what[160];
-    snprintf(what, sizeof what, "Downloading the offline game (%s)", tag);
-    progress_ui ui = {.t0 = host_now_ms(), .what = what};
-    if (!net_download_file(url, zip_path, show_progress, &ui, err, sizeof err)) {
-        host_log("[offline] download stopped: %s", err);
-        if (strcmp(err, "cancelled")) {
-            char m[700];
-            snprintf(m, sizeof m, "The download stopped:\n%s\n\nIt continues where it stopped next time.", err);
-            ui_message_wait(m);
-        }
-        return false;
-    }
-    // Done: check it before it replaces anything. A download that stopped early, was cut off or
-    // came back damaged (a server answering 416 to the resume of a wrong part counts as complete)
-    // would otherwise replace a working game with one that doesn't open: its size must be the
-    // release's, and it must open as a zip (that reads only the zip's directory at its end).
-    struct stat dl;
-    bool size_ok = stat(zip_path, &dl) == 0 && (size <= 0 || dl.st_size == size);
-    mz_zip_archive z;
-    memset(&z, 0, sizeof z);
-    bool zip_ok = size_ok && mz_zip_reader_init_file(&z, zip_path, 0);
-    unsigned files = zip_ok ? mz_zip_reader_get_num_files(&z) : 0;
-    if (zip_ok) mz_zip_reader_end(&z);
-    if (!size_ok || !zip_ok || !files) {
-        host_log("[offline] downloaded file rejected: %lld bytes (release: %lld), %s", (long long)(size_ok ? dl.st_size : -1),
-                 size, !size_ok ? "wrong size" : !zip_ok ? "not a zip" : "empty zip");
-        remove(zip_path);
-        ui_message_wait("The downloaded file is damaged (wrong size or not a zip)\n"
-                        "and was deleted. The installed game, if any, is kept.\n\nTry the download again.");
-        return false;
-    }
-    host_log("[offline] download checked: %lld bytes, %u files", (long long)dl.st_size, files);
-    // Keep the complete previous archive recoverable on Switch's no-overwrite SD.
-    if (!storage_install_file(zip_path, game_zip)) {
-        ui_message_wait("Couldn't install the downloaded game.\nThe previous version is kept where possible.");
-        return false;
-    }
-    remove(part_tag_path);
-    const char *version=strip_tag(tag);
-    storage_write_file(version_path, version, strlen(version));
-    // The new archive has been installed. Its old copy is no longer needed;
-    // interruption before installation is recovered by offline_installed().
-    char backup[800];snprintf(backup,sizeof backup,"%s.bak",game_zip);remove(backup);
-    host_log("[offline] installed release %s as %s", tag, game_zip);
+    debug_package_info info;
+    bool size_ok=stat(partial,&st)==0&&st.st_size==expected;
+    bool valid=size_ok&&(debug?game_debug_info(partial,&info):regular_archive(partial));
+    if(valid&&debug)valid=!strcmp(info.version,version);
+    if(!valid){remove(partial);ui_message_wait("The downloaded package failed its version or archive check.\nThe installed game is kept.");return false;}
+    // Fetch the precise unmodified base, not whatever happens to be latest
+    // while this Debug overlay was built. Existing cached versions are reused.
+    if(debug&&!game_install(false,info.base_version,false))return false;
+    if(!storage_install_file(partial,game_zip)){ui_message_wait("Couldn't install the game package. The previous version is recoverable.");return false;}
+    remove(part_tag);
+    if(!debug&&activate&&!activate_base(version))return false;
+    char backup[1300];snprintf(backup,sizeof backup,"%s.bak",game_zip);remove(backup);
+    host_log("[packages] installed %s %s",debug?"Debug patch pack":"stock base",version);
     return true;
 }
+bool offline_install(void){return game_install(false,NULL,true);}
+bool debug_game_install(void){return game_install(true,NULL,false);}

@@ -307,6 +307,12 @@
         if (r === undefined) return;
         rt.frameHooks.splice(rt.frameHooks.indexOf(hook), 1);
         if (r === null) { input.dispatchEvent(new Event("cancel", { bubbles: true })); return; }
+        const policyError = rt.saveImportError && rt.saveImportError(r[1]);
+        if (policyError) {
+          g.alert(policyError);
+          input.dispatchEvent(new Event("cancel", { bubbles: true }));
+          return;
+        }
         const file = new g.File([r[1]], r[0], { type: /\.json$/i.test(r[0]) ? "application/json" : "text/plain" });
         const list = [file];
         list.item = (i) => list[i] || null;

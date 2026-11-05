@@ -1,6 +1,6 @@
 # Three-mode product plan
 
-0.2.0-rc1 uses one APK and one NRO. Online and Offline are selectable now; Debug is a visible unavailable placeholder for a later release. Minigames and Google Drive integration are excluded. This document distinguishes the completed native boundaries from the remaining roadmap; see [testing](nx-testing.md).
+The public RC7 uses one APK/NRO with Online and Offline; Debug is unavailable there. The 0.3.0-beta.1 candidate implements an isolated compiled Debug overlay, editors and custom seeded runs. See [current Debug implementation and channel status](debug-mode.md). The remainder of this document records the original product requirements; it is not a claim that every roadmap item has been hardware-tested. Minigames and Google Drive remain excluded.
 
 The startup screen offers three explicit choices, usable with controller or
 direct touch. Each mode gets its own profile, storage directory, cookie/auth

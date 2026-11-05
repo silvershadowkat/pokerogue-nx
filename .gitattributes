@@ -1,2 +1,6 @@
 *.sh text eol=lf
 *.patch text eol=lf
+
+# Preserve the reviewed patch bytes and its SHA on Windows. Unified-diff blank
+# context lines deliberately contain one space; do not flag those as code edits.
+debug/game.patch -text whitespace=-blank-at-eol

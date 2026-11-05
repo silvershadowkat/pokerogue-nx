@@ -8,6 +8,7 @@
 
 #include "quickjs.h"
 #include "client_modes.h"
+#include "game_packages.h"
 
 // ---------------------------------------------------------------- config
 
@@ -24,6 +25,7 @@ typedef struct {
     int win_w, win_h;        // window / screen size
     int exit_after_frames;   // 0 = run forever
     const char *local_dir;   // config.txt local=<dir>: play an offline build from this folder
+    const char *local_base;  // Debug reads unchanged assets from its pinned stock archive
     bool force_online;       // config.txt online=1
     bool log;                // config.txt log=1: write log.txt in a player build (debug builds always do)
     bool no_profile;         // config.txt profile=0
@@ -111,6 +113,9 @@ void plat_thread_setup(const char *name, int core, int priority);
 void plat_keep_awake(void);                 // reset the console's idle/auto-sleep timer
 long long plat_free_space(const char *path); // free bytes on the storage holding path, -1 if unknown
 bool offline_install(void);
+bool debug_game_install(void);
+void debug_update_check_start(void);
+const char *debug_update_available(const char *installed);
 // Screens drawn outside the game loop (offline_install.c).
 bool ui_confirm(const char *msg);       // X yes, O no
 void ui_message_wait(const char *msg);  // until X or O
@@ -255,7 +260,7 @@ void overlay_group_end(void);
 void overlay_group_draw(float x,float y,float w,float h,float opacity);
 void gl_game_to_screen(float gx, float gy, float *sx, float *sy, float *scale);
 void host_frame_drawn(void); // screenshots from screens outside the game loop
-int launcher_run(bool offline_ok, const char *offline_version, bool bench_ok, void (*poll)(bool *quit)); // 0 online, 1 offline, 4 benchmark, -1 quit
+int launcher_run(bool offline_ok, const char *offline_version, bool debug_ok, const char *debug_version, bool bench_ok, void (*poll)(bool *quit)); // 0 online, 1 offline, 4 benchmark, -1 quit
 void config_set(const char *key, const char *value); // key=value in config.txt (main.c)
 bool fields_draw(void); // the game's text input fields (js/input.js -> __native.setFieldOverlays)
 void fields_set(int n);

@@ -22,7 +22,7 @@
 #define TOG_W 300
 #define TOG_H 30
 
-enum { M_ONLINE, M_OFFLINE, M_DEBUG, M_UPDATE, M_BENCH };
+enum { M_ONLINE, M_OFFLINE, M_DEBUG, M_UPDATE, M_BENCH, M_DEBUG_UPDATE };
 typedef struct { const char *label, *key; bool *value; } toggle;
 static const toggle toggles[] = {
     {"Tap menus", "directtouch", &g_cfg.direct_touch},
@@ -41,7 +41,8 @@ static uint8_t image[W*H*4];
 static plutovg_font_face_t *font;
 static plutovg_canvas_t *canvas;
 static bool theme_loaded;
-static int panel_y(int n){return n>3?180:PANEL_Y;}
+static int panel_y(int n){return n>4?154:n>3?180:PANEL_Y;}
+static int row_h(int n){return n>4?35:ROW_H;}
 
 static char *read_asset(const char *path,size_t *length) {
     FILE *f=fopen(path,"rb");if(!f)return NULL;
@@ -109,26 +110,27 @@ static void centered(int y,const char *s,int size,bool dim){
     float width=font?plutovg_font_face_text_extents(font,(float)size,s,-1,PLUTOVG_TEXT_ENCODING_UTF8,NULL):(float)strlen(s)*8;
     text((int)((W-width)/2),y,s,size,dim,false);
 }
-static void render(int sel,const int *modes,int n,bool offline_ok,const char *version,const char *update){
+static void render(int sel,const int *modes,int n,bool offline_ok,const char *version,const char *update,bool debug_ok,const char *debug_version,const char *debug_update){
     memset(image,0,sizeof image);for(int i=0;i<W*H;i++)image[i*4+3]=255;
     picture(0,0,0,W,H);picture(1,255,54,450,99);
     int top=panel_y(n);
-    window_box(PANEL_X,top,PANEL_W,24+ROW_H*n);
+    window_box(PANEL_X,top,PANEL_W,24+row_h(n)*n);
     window_box(22,TOG_Y-6,W-44,74);
-    if(sel<n)picture(3,PANEL_X+22,top+25+ROW_H*sel,18,30);
+    if(sel<n)picture(3,PANEL_X+22,top+25+row_h(n)*sel,18,30);
     else picture(3,30+(sel-n)*TOG_W,TOG_Y+9,12,20);
     plutovg_convert_rgba_to_argb(image,image,W,H,W*4);
     plutovg_surface_t *surface=plutovg_surface_create_for_data(image,W,H,W*4);
     canvas=plutovg_canvas_create(surface);
     for(int i=0;i<n;i++){
-        const char *name=modes[i]==M_ONLINE?"Online":modes[i]==M_OFFLINE?"Offline":modes[i]==M_DEBUG?"Debug":modes[i]==M_UPDATE?"Update offline game":"Shader benchmark";
-        text(PANEL_X+56,top+15+i*ROW_H,name,36,modes[i]==M_DEBUG,sel==i);
+        const char *name=modes[i]==M_ONLINE?"Online":modes[i]==M_OFFLINE?"Offline":modes[i]==M_DEBUG?"Debug":modes[i]==M_UPDATE?"Update Offline":modes[i]==M_DEBUG_UPDATE?"Update Debug":"Shader benchmark";
+        text(PANEL_X+56,top+15+i*row_h(n),name,n>4?30:36,false,sel==i);
     }
     char message[150];int current=sel<n?modes[sel]:-1;
     if(current==M_ONLINE)snprintf(message,sizeof message,"Official account, cloud saves and Daily Run");
     else if(current==M_OFFLINE)snprintf(message,sizeof message,offline_ok?"Installed version %s - saves stay on this device":"Download the offline game (about 530 MB)",version);
-    else if(current==M_DEBUG)snprintf(message,sizeof message,"Cheats and custom modes - coming in a later update");
+    else if(current==M_DEBUG)snprintf(message,sizeof message,debug_ok?"SilverShadow cheats and editors - local saves only":"Download Debug patches - shared assets, local saves");
     else if(current==M_UPDATE)snprintf(message,sizeof message,"Version %s available - choose to download",update);
+    else if(current==M_DEBUG_UPDATE)snprintf(message,sizeof message,"Debug %s available - choose to download",debug_update);
     else snprintf(message,sizeof message,"Touch, physical controls, or both");
     centered(TOG_Y-51,message,24,false);
     for(int i=0;i<N_TOGGLES;i++){
@@ -137,19 +139,20 @@ static void render(int sel,const int *modes,int n,bool offline_ok,const char *ve
         char label[80];snprintf(label,sizeof label,"%s: %s",toggles[i].label,value);
         text(52+i*TOG_W,TOG_Y,label,24,false,sel==n+i);
     }
-    centered(TOG_Y+35,"PokeRogue NX 0.2.0-rc7",18,true);
+    centered(TOG_Y+35,"PokeRogue 0.3.0-beta.1",18,true);
     plutovg_canvas_destroy(canvas);canvas=NULL;plutovg_surface_destroy(surface);
     plutovg_convert_argb_to_rgba(image,image,W,H,W*4);
 }
 static int hit(int n,float x,float y){
     int top=panel_y(n);
-    if(x>=PANEL_X&&x<PANEL_X+PANEL_W&&y>=top+12&&y<top+12+n*ROW_H)return (int)(y-top-12)/ROW_H;
+    if(x>=PANEL_X&&x<PANEL_X+PANEL_W&&y>=top+12&&y<top+12+n*row_h(n))return (int)(y-top-12)/row_h(n);
     if(y>=TOG_Y&&y<TOG_Y+TOG_H&&x>=30&&x<W-30)return n+(int)(x-30)/TOG_W;
     return -1;
 }
-static int list_modes(int *modes,const char *update,bool bench){
+static int list_modes(int *modes,const char *update,const char *debug_update,bool bench){
     int n=0;modes[n++]=M_ONLINE;modes[n++]=M_OFFLINE;modes[n++]=M_DEBUG;
     if(update)modes[n++]=M_UPDATE;
+    if(debug_update)modes[n++]=M_DEBUG_UPDATE;
     if(bench)modes[n++]=M_BENCH;
     return n;
 }
@@ -159,16 +162,18 @@ static int move(int sel,int n,int dy,int dx){
     if(dy>0)return sel<n-1?sel+1:sel<n?n:0;
     return sel;
 }
-int launcher_run(bool offline_ok,const char *version,bool bench,void (*poll)(bool *quit)){
+int launcher_run(bool offline_ok,const char *version,bool debug_ok,const char *debug_version,bool bench,void (*poll)(bool *quit)){
     load_theme();
     if(offline_ok)offline_update_check_start();
-    const char *update=NULL;int modes[5],n=list_modes(modes,update,bench),sel=0;
+    if(debug_ok)debug_update_check_start();
+    const char *update=NULL,*debug_update=NULL;int modes[6],n=list_modes(modes,update,debug_update,bench),sel=0;
     char path[800],saved[32]="";snprintf(path,sizeof path,"%s/launcher.txt",g_cfg.app_dir);
-    FILE *f=fopen(path,"r");if(f){fgets(saved,sizeof saved,f);fclose(f);if(!strncmp(saved,"offline",7))sel=1;}
+    FILE *f=fopen(path,"r");if(f){fgets(saved,sizeof saved,f);fclose(f);if(!strncmp(saved,"offline",7))sel=1;else if(!strncmp(saved,"debug",5))sel=2;}
     bool prev[18]={0},prev_dir[4]={0},dirty=true,chosen=false,quit=false,armed=false;
     while(!chosen&&!quit){
         poll(&quit);
-        if(offline_ok&&!update&&(update=offline_update_available(version))){int old=n;n=list_modes(modes,update,bench);if(sel>=old)sel+=n-old;dirty=true;}
+        if(offline_ok&&!update&&(update=offline_update_available(version))){int old=n;n=list_modes(modes,update,debug_update,bench);if(sel>=old)sel+=n-old;dirty=true;}
+        if(debug_ok&&!debug_update&&(debug_update=debug_update_available(debug_version))){int old=n;n=list_modes(modes,update,debug_update,bench);if(sel>=old)sel+=n-old;dirty=true;}
         int sw,sh;plat_drawable_size(&sw,&sh);
         float scale=(float)sw/W;if((float)sh/H<scale)scale=(float)sh/H;
         float ox=(sw-W*scale)/2,oy=(sh-H*scale)/2;
@@ -203,9 +208,9 @@ int launcher_run(bool offline_ok,const char *version,bool bench,void (*poll)(boo
             else{*toggles[i].value=!*toggles[i].value;config_set(toggles[i].key,*toggles[i].value?"1":"0");}
             dirty=true;
         }
-        else if(pick>=0&&modes[pick]!=M_DEBUG)chosen=true;
+        else if(pick>=0)chosen=true;
         glBindFramebuffer(GL_FRAMEBUFFER,0);glViewport(0,0,sw,sh);glClearColor(0,0,0,1);glClear(GL_COLOR_BUFFER_BIT);
-        if(dirty)render(sel,modes,n,offline_ok,version,update);
+        if(dirty)render(sel,modes,n,offline_ok,version,update,debug_ok,debug_version,debug_update);
         overlay_rgba_at(14,image,W,H,dirty,ox,oy,W*scale,H*scale);dirty=false;
         host_frame_drawn();plat_swap();
 #ifndef __vita__
@@ -215,7 +220,9 @@ int launcher_run(bool offline_ok,const char *version,bool bench,void (*poll)(boo
     if(quit)return -1;
     int mode=modes[sel];
     if(mode==M_UPDATE)return 3;
+    if(mode==M_DEBUG_UPDATE)return 7;
+    if(mode==M_DEBUG&&!debug_ok)return 6;
     if(mode==M_OFFLINE&&!offline_ok)return 2;
-    f=fopen(path,"w");if(f){fputs(mode==M_OFFLINE?"offline\n":"online\n",f);fclose(f);}
-    return mode==M_BENCH?4:mode==M_OFFLINE?1:0;
+    f=fopen(path,"w");if(f){fputs(mode==M_DEBUG?"debug\n":mode==M_OFFLINE?"offline\n":"online\n",f);fclose(f);}
+    return mode==M_BENCH?4:mode==M_DEBUG?5:mode==M_OFFLINE?1:0;
 }

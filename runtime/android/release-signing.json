@@ -1,0 +1,6 @@
+{
+  "alias": "pokeroguenx",
+  "certificateSha256": "d9ead44887d9cf27ae29c24a19ddae6ea97ee912c20204c6e95d370513a8a5a1",
+  "replacesCertificateSha256": "571de83d2f8e9240050b20656d35bd3c658088a7dec211abd21775070f54e58d",
+  "migration": "One uninstall/reinstall is required from RC7 and earlier."
+}

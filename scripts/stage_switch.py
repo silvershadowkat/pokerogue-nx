@@ -5,12 +5,14 @@ import hashlib
 import json
 import shutil
 import subprocess
+import xml.etree.ElementTree as ET
 
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
 parser.add_argument('--output', type=Path, required=True)
 parser.add_argument('--nro', type=Path, default=root / 'runtime/build-switch/pokerogue-nx.nro')
 args = parser.parse_args()
+version=ET.parse(root/'runtime/android/AndroidManifest.xml').getroot().attrib['{http://schemas.android.com/apk/res/android}versionName']
 with args.nro.open('rb') as f:
     header = f.read(32)
 if header[16:20] != b'NRO0':
@@ -23,7 +25,7 @@ config = target / 'config.txt'
 # A staging directory may be reused; never overwrite a user's settings or saves.
 if not config.exists():
     config.write_text('audio=1\nlog=1\nosk=1\ndirecttouch=1\ntouchpad=1\n', encoding='utf8')
-(args.output / 'READ-ME.txt').write_text('''PokeRogue NX 0.2.0-rc7 - Switch candidate
+(args.output / 'READ-ME.txt').write_text(f'''PokeRogue {version} - Switch candidate
 Copy the switch folder to the SD root. Do not delete existing saves.
 Use full application mode (hold R while launching a game to enter hbmenu).
 Launch switch/pokerogue-nx/pokerogue-nx.nro. Applet mode is not supported.
@@ -31,7 +33,9 @@ Launch switch/pokerogue-nx/pokerogue-nx.nro. Applet mode is not supported.
 No game files ship here. Connect Wi-Fi for the initial menu assets.
 Online loads the live official game; use your normal PokeRogue account.
 Offline downloads game.zip on demand and reads it without extracting it.
-Debug is a visible placeholder; cheats/custom modes are not in this candidate.
+Debug loads a separate SilverShadow overlay and its exact stock base archive.
+Its update channel is not published yet. See docs/debug-mode.md for local setup.
+No legacy controllers, minigames or Google Drive integration are included.
 
 Tap menus and Touch pad can be enabled independently. Controllers always work.
 Close and reopen to return to mode selection. Each mode has separate storage.
@@ -49,7 +53,7 @@ AI assisted coding/testing. No AI-generated game assets were added.
 ''',encoding='utf8')
 with nro.open('rb') as f:
     digest = hashlib.file_digest(f,'sha256').hexdigest()
-manifest = {'version':'0.2.0-rc7','sourceCommit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=root,text=True).strip(),
+manifest = {'version':version,'sourceCommit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=root,text=True).strip(),
             'upstreamRuntime':subprocess.check_output(['git','rev-parse','upstream/main'],cwd=root,text=True).strip(),
             'files':[{'path':str(nro.relative_to(args.output)).replace('\\','/'),'bytes':nro.stat().st_size,'sha256':digest}],
             'bundledGame':False,'switchHardwareTested':False}

@@ -448,7 +448,7 @@ static void control_poll(JSContext *ctx, bool *quit) {
 
 const char *host_version_string(void) {
 #if defined(__SWITCH__) || defined(__ANDROID__)
-    return "PokeRogue NX 0.2.0-rc7 | Vita runtime " PKR_VERSION " (" PKR_COMMIT ")";
+    return "PokeRogue 0.3.0-beta.1 | Vita runtime " PKR_VERSION " (" PKR_COMMIT ")";
 #else
     return "PokeRogue Native " PKR_VERSION PKR_FLAVOR " (" PKR_COMMIT ")";
 #endif
@@ -917,31 +917,12 @@ static void save_screenshot(const char *path) {
 //   devbuilds=off|<url>             test builds: off, or another build.json than the dev-build release
 // Is an offline build of the game in <data>/game? The start screen offers it (unless config.txt
 // decides: online=1, or local=<dir>).
-static char offline_dir[600], offline_version[64] = "?";
-static bool offline_installed(void) {
-    // An unpacked folder (copied by hand) or the downloaded zip.
-    char probe[700];
-    snprintf(offline_dir, sizeof offline_dir, "%s/game", g_cfg.data_dir);
-    snprintf(probe, sizeof probe, "%s/index.html", offline_dir);
-    FILE *f = fopen(probe, "rb");
-    if (f) {
-        fclose(f);
-        snprintf(probe, sizeof probe, "%s/currentVersion.txt", offline_dir);
-    } else {
-        snprintf(offline_dir, sizeof offline_dir, "%s/game.zip", g_cfg.data_dir);
-        storage_recover_previous(offline_dir);
-        if (!(f = fopen(offline_dir, "rb"))) return false;
-        fclose(f);
-        snprintf(probe, sizeof probe, "%s/game.zip.version", g_cfg.data_dir);
-        storage_recover_previous(probe);
-    }
-    if ((f = fopen(probe, "rb"))) {
-        size_t n = fread(offline_version, 1, sizeof offline_version - 1, f);
-        offline_version[n] = 0;
-        offline_version[strcspn(offline_version, "\r\n")] = 0;
-        fclose(f);
-    }
-    return true;
+static char offline_dir[900], offline_version[64]="?", debug_dir[900], debug_base[900], debug_version[64]="?";
+static bool offline_installed(void){return game_find_offline(offline_dir,sizeof offline_dir,offline_version,sizeof offline_version,g_cfg.app_dir);}
+static bool debug_installed(void){
+    debug_package_info info;
+    if(!game_find_debug(debug_dir,sizeof debug_dir,debug_base,sizeof debug_base,&info,g_cfg.app_dir))return false;
+    snprintf(debug_version,sizeof debug_version,"%s",info.version);return true;
 }
 
 // Called by screens drawn before the game loop (start screen) right before they swap buffers.
@@ -1116,7 +1097,7 @@ static void relaunch(JSContext *ctx, int argc, char **argv) {
     snprintf(path, sizeof path, "%s/relaunch.txt", g_cfg.app_dir ? g_cfg.app_dir : g_cfg.data_dir);
     FILE *f = fopen(path, "w");
     if (f) {
-        fputs(g_cfg.local_dir ? "offline" : "online", f);
+        fputs(client_mode_name(g_cfg.client_mode), f);
         fclose(f);
     }
     host_log("[app] restarting (the game asked to reload the page)");
@@ -1205,7 +1186,8 @@ int main(int argc, char **argv) {
 
     // Online or offline: the start screen, unless config.txt decided. It can also download the
     // offline game.
-    bool have_offline = offline_installed();
+    bool have_offline = offline_installed(), have_debug = debug_installed();
+    bool debug_selected = false;
     char again[16];
     relaunch_mode(again, sizeof again);
     if (!again[0]) dev_offer_update(); // a newer test build in the dev-build release (restarts the app; also before bench=shaders)
@@ -1213,13 +1195,16 @@ int main(int argc, char **argv) {
         g_cfg.local_dir = offline_dir;
         g_cfg.base_url = LOCAL_ORIGIN "/";
     }
+    if (!strcmp(again, "debug") && have_debug) {
+        g_cfg.local_dir=debug_dir;g_cfg.base_url=LOCAL_ORIGIN "/";debug_selected=true;
+    }
     while (!g_cfg.local_dir && !g_cfg.force_online && strcmp(again, "online")) {
 #ifdef PKR_DEBUG
         bool bench_ok = bench_available();
 #else
         bool bench_ok = false;
 #endif
-        int choice = launcher_run(have_offline, offline_version, bench_ok, launcher_poll);
+        int choice = launcher_run(have_offline, offline_version, have_debug, debug_version, bench_ok, launcher_poll);
         if (choice < 0) return 0;
         if (choice == 0) break;
 #ifdef PKR_DEBUG
@@ -1233,13 +1218,17 @@ int main(int argc, char **argv) {
             have_offline = offline_installed();
             continue; // back to the start screen, now offering the installed game
         }
-        g_cfg.local_dir = offline_dir;
+        if(choice==5 || choice==6 || choice==7){
+            if(choice!=5){debug_game_install();have_debug=debug_installed();continue;}
+            debug_selected=true;g_cfg.local_dir=debug_dir;
+        } else g_cfg.local_dir=offline_dir;
         g_cfg.base_url = LOCAL_ORIGIN "/";
     }
     // No credentials, cookies, saves or compiled game hooks cross modes. The
     // process is restarted to change mode; the runtime is never reused in place.
     static char profile_dir[800], profile_cache[850];
-    g_cfg.client_mode=g_cfg.local_dir?PKR_OFFLINE:PKR_ONLINE;
+    g_cfg.client_mode=debug_selected?PKR_ENHANCED:g_cfg.local_dir?PKR_OFFLINE:PKR_ONLINE;
+    g_cfg.local_base=debug_selected?debug_base:NULL;
     if(!client_profile_path(profile_dir,sizeof profile_dir,g_cfg.app_dir,g_cfg.client_mode))return 1;
     mkdirs(profile_dir);
     snprintf(profile_cache, sizeof profile_cache, "%s/http-cache", profile_dir);
@@ -1257,7 +1246,9 @@ int main(int argc, char **argv) {
             ver[strcspn(ver, "\r\n")] = 0;
             fclose(vf);
         }
-        host_log("[local] offline game from %s (game version %s): no login, saves stay on this console", g_cfg.local_dir, ver);
+        if(debug_selected)snprintf(ver,sizeof ver,"%s",debug_version);
+        else if(!strcmp(ver,"?"))snprintf(ver,sizeof ver,"%s",offline_version);
+        host_log("[local] %s game from %s (game version %s): no login, saves stay on this console", debug_selected?"debug":"offline",g_cfg.local_dir,ver);
     }
     else host_log("[online] playing %s", g_cfg.base_url);
 #if defined(__SWITCH__) || defined(__ANDROID__)
