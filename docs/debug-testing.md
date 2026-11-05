@@ -3,6 +3,16 @@
 Checks performed on 2026-11-05. This is development-candidate evidence, not a
 new public release or a claim that every cheat or battle combination was tested.
 
+The later [Vita 1.0.17 sync](vita-sync-2026-11-05.md) also passed 37 runtime smoke
+and 28 Phaser/rex differential checks, each from fresh and cached bytecode.
+`runtime/tests/mode_transition_test.py` starts the actual native client through
+Debug, Online, Offline and Debug again using one test-owned app directory and a
+loopback Online fixture. Synthetic enabled-cheat/edited-save markers, cookies,
+globals and Debug-only modules remain in Debug; Online import stays disabled.
+Debug state is preserved on return. This checks the production startup, profile
+and archive/cache boundaries without using an official account or real player
+data. It is not a full-gameplay or authenticated server-save test.
+
 ## Source and host checks
 
 - Pinned official `f045bef687ee7a60faa94679939d5d9e074cb19d`, game 1.12.2.4,

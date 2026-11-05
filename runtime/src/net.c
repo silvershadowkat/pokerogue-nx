@@ -823,7 +823,9 @@ static void log_slow(req *r) {
     curl_easy_getinfo(e, CURLINFO_NUM_CONNECTS, &conns);
     curl_easy_getinfo(e, CURLINFO_HTTP_VERSION, &ver);
     char *method = NULL;
+#if LIBCURL_VERSION_NUM >= 0x074800
     curl_easy_getinfo(e, CURLINFO_EFFECTIVE_METHOD, &method);
+#endif
     // no query: it can hold a session id, and the cache-busting ?t= tells nothing
     int ulen = (int)strcspn(r->url, "?");
     double s = total / 1e6, body_s = (total - first) / 1e6;
