@@ -1290,3 +1290,269 @@ same onBatch. Temple: 5 -> 2 field draws a frame, screenshots identical (animati
 batching switched off and on by the pipeline's name), render 1.17 -> 1.13 ms on the desktop.
 tests/smoke checks that each sprite is drawn with the uniforms it was bound with, in fewer draws,
 and that the Pokémon pipeline keeps its draw per sprite.
+
+### Later waves (log187, 1.0.6, 2026-11-02)
+Online, two runs into later waves (Abyss, then Cave), profiler off. JS at the median by draw calls a
+frame: Abyss 13-18 calls 30 ms, 19-24 36.7, 25-32 41.9, 33 or more 45.3 (10 windows at 38-44 calls,
+19-20 fps); Cave 13-18 calls 23.1 ms, 19-24 31.7. GPU 14.5-24 ms. The hitch between waves with the
+loading screen was the collection after a wave save: 2.2 s, JS heap 84.7 -> 74.8 MB (the other one,
+in the Abyss, 1.5 s for 2 MB). The heap grows with the run (JS after collections up to 75 MB, heap in
+use up to 183 MB), so collections take longer late in a run; placing them after saves keeps them out
+of battles. Each run's end took one ~6 s frame (back to the title: the game rebuilds its screens).
+The Abyss is ~7 ms slower than the Cave at the same draw calls, but on the desktop an Abyss battle
+(the saved Temple run with its arena set to the Abyss) draws the same objects as the Temple (backdrop,
+four ground layers, the Pokémon) at the same cost (render 1.2 ms against 1.1): the difference is in
+the run (later waves), not the arena's drawing. Needs a profiled log to say more.
+
+### From the pokerogue-nx fork (reviewed 2026-11-03; runtime 1.0.7)
+silvershadowkat/pokerogue-nx merged our runtime up to 1.0.6 and ports it to the Switch and Android
+(SDL, touch controls, mbedTLS, storage that survives the Switch's rename-can't-overwrite). Taken over:
+- Storage writes that fail are tried again: the writer thread retries a failed write a second later,
+  up to 5 times (unless a newer copy of the file is queued), and storage.js keeps a file it couldn't
+  hand over dirty for the next flush. Before, the change waited for the game's next write to it.
+- net.c: a cached 404's status line was added with length 28 for 26 bytes (2 bytes read past the
+  literal); a cache entry whose rename fails no longer leaves its .tmp.
+- Where the game is, in logs (the fork logs every phase change; this is lower volume): a "[game] wave
+  N: <arena>, wild|trainer[, double] | party P, items I" line when the wave changes, and "wave N" on
+  every [perf] line (js/bootstrap.js, N.setPerfTag; only when there is a log).
+Kept in mind (docs/PLAN.md): their finding that a fractional corrected Date.now() makes the save API
+reject saves (unconfirmed on the Vita: our correction only applies past 30 s of clock error), and their
+D-pad navigation for the login and register screens.
+
+### The item transfer menu (log189, 1.0.7, 2026-11-03)
+Late in a run (waves 114-119, Cave, 6 Pokémon, 39-45 held items) every up or down press in the party
+screen's "move items" list was a ~400 ms frame (up to 730 ms when the list scrolled). The profile:
+PartyUiHandler.processModifierTransferModeUpDownInput calls updateOptions on every press, which
+destroys and makes again every option's BBCodeText (TextStyle.setStyle, setText's tag parsing) and
+looks the held items up again, then moves the cursor. The rebuild exists to put the quantity of the
+item being left back to its maximum, so it only changes anything when that quantity was lowered with
+left/right. gamefix rule "item list cursor without a rebuild" now rebuilds only then; scrolling still
+rebuilds (setOptionsCursor does that itself), and the window otherwise is the one already shown.
+Smoke check: the same quantities, cursor and window as the game's code over a sequence of presses and
+quantity changes, with 6 rebuilds instead of 12. On the desktop (offline game, Abyss save, transfer
+screen) presses now rebuild nothing; the save has no held items, so the speed-up itself needs a log.
+Also, covered objects (fastpath.js): the children skipped under a screen-covering image were walked
+whole every frame to fill the camera's render list (listSkipped, 4.7% of the party screen's frames).
+Only the input plugin reads that list (sortGameObjects orders the objects under a pointer by it), so
+now only the skipped interactive objects (the input plugin's list) go in, in drawing order; the
+phaser test checks their order against what is drawn.
+
+### A slow network: the egg gacha, log sends and wave starts (log194-196, 1.0.8, 2026-11-03)
+Played on busy 2.4 GHz hotel Wi-Fi. What the user saw, and what the log shows:
+- The egg gacha "hung" after a ticket: the pull waits for the game's system save
+  (`savedata/system/update`, the whole system data), and that request stayed pending ~50 s (t=190 to
+  241 s). The frames were fine (38 ms max); the game itself waits, as it does in a browser. The log
+  uploads in the same minutes ran at ~10 KB/s (51 KB in ~5 s), so the save's upload is the likely time.
+- Slow wave starts were downloads the game waits for: a special battle's music has to load before
+  the wave starts (battle_legendary_ub.mp3, 2 MB, before wave 141; the Delibird-y encounter's
+  2.5 MB before wave 144). sea.mp3 (2.9 MB) took ~80 s, about 37 KB/s. 8.6 MB came over the network
+  in waves 136-145.
+- After a log send the game felt unresponsive. The result was a dialog, which takes the controls
+  until closed, and it came only when the upload finished (5 s here). The release check after a
+  dialog closes also counted the rear touchpad's upper half (L2/R2), so fingers resting there could
+  keep the game's controls muted. And START of L + R + START reached the game.
+Changes (1.0.9): the log send shows a line over the game ("Sending the log...", then the result for
+4 s) and leaves the controls to the game (the benchmark's end keeps its dialog); with L + R held,
+START and TRIANGLE (the combos' buttons) no longer reach the game; the rear touchpad doesn't hold a
+dialog's input mute. And `[net] slow:` lines for any request over 5 s: the method, the URL without
+its query, upload size and speed, time to the first byte, download speed, whether the connection
+was new (connect and TLS times) or reused, and the HTTP version, so the next log says where such
+waits go (the upload, the server, or the download).
+
+### The item list's rebuild: rex BBCodeText drawn when rendered (log200, 1.0.9; runtime 1.0.10, 2026-11-03)
+1.0.8 stopped the rebuild on up/down within the item transfer list (log200: no more
+processModifierTransferModeUpDownInput stacks), but scrolling still rebuilds it, ~385 ms a press on the
+Vita (log200, waves 147-149, ~50 items). The rebuild makes ~10 option labels anew, rex BBCodeTexts
+(phaser3-rex-plugins 1.80.20), and each new one is changed ~5 times before the game reads its width
+(constructor, setShadow, setLineSpacing, setText twice); every change parsed the tags, laid out the
+lines, drew the canvas (96 px fonts, scaled down) and uploaded it. js/fastpath.js 4b does for them what
+4 does for Phaser's Text: a change only marks the text; it is laid out and measured with rex's own code
+(drawing off) when its size or lines are first read, and drawn and uploaded once, when rendered; a
+destroyed label's texture goes to a new one with the same text and style (textCache), as when the list
+scrolls by one. The class comes from window.RexPlugins.GameObjects.BBCodeText when the game registers
+the plugin; the game's code is precompiled without source, so its shape is checked instead (methods,
+updateText's one argument, the text's canvasText on first use), and anything else leaves rex alone.
+Checks: tests/phaser (rex 1.80.20 from npm, built as the game builds its options: same sizes, lines
+and canvas pixels as rex's own code, one draw per text, textures reused); scripts/probe_rex_text.js
+in the running game (ten labels in the game's own style at its size: same sizes, 0 of 2943 changed
+pixels differ, also with kept textures). Desktop, build plus the frame that draws them: 22-32 ms with
+rex's own drawing, 13-19 ms now; per label one measure instead of ~5 layouts, one draw instead of ~5.
+The Vita's number needs a log with the item list.
+Measured again on the desktop with a real late run (the owner's save, wave 163, 43 held items; kept in
+runtime/.cache/saves/, not committed): scrolling the item transfer list (Mega Darkrai's items), the
+game's updateOptions took 24.2 ms a rebuild with rex's own drawing and 9.3 ms with 4b (the labels'
+drawing moves to the next frame, where scrolling mostly reuses their textures).
+
+### Battle retries and the system save (log203, 1.0.10; runtime 1.0.11, 2026-11-03)
+The owner often retries battles (back to the title, Continue): each one was a 5-6.4 s frame, then
+1.1 and 2 s frames (log203: ~80 s over 8 resets), and the system save's parse took 650-900 ms at each
+load (6.7 s in log203). Two changes, and a better report for such frames:
+- The slow-frame report keeps 4096 samples (1024 cut a 6.4 s frame at ~3 s) and adds a line "by
+  function": the time each function was on the stack, under 85% of the frame. Frames that build a
+  screen spread over many stacks and showed nothing before.
+- With it, on the desktop with fixtures/run-wave163.json: the reset frame was 300 ms, 187 of them
+  UI.setup (every screen handler's setup again). js/lazy_ui.js now also defers the five settings
+  screens (96 ms of it), achievements, game stats, the egg gacha, challenges and the Pokedex scan
+  (~135 ms, ~45% of the frame). A reset destroys every handler (UI.freeUIData) and
+  GameChallengesUiHandler's destroy() reads what its setup() made: a never-built handler is now
+  destroyed without its own destroy() (UiHandler's is empty). After the change the reset frame is
+  under the 250 ms report threshold on the desktop; with lazy UI off it is 915 ms. Settings,
+  achievements, stats and the egg gacha look the same either way (screenshots: only the play time,
+  the gacha's clock and the title's animation differ). tests/phaser checks the deferral.
+- gamefix "system save parsed with fewer calls": parseSystemData's reviver ran for ~21,000 members;
+  it now runs only for gameStats, eggs and ribbons, and the *Attr members get the reviver's
+  BigInt(value ?? 0) in C (src/js_host.c parseRevived; the rule matches the reviver's exact text).
+  Desktop, a 218 KB save: 11.7 ms with the reviver, 6.5 ms now (plain JSON.parse 3.1). A JS walk
+  instead was slower than the engine's reviver (16.5 ms). Smoke test: the same data (classes, BigInts,
+  a member revived to undefined deleted) and the same error for a fractional *Attr.
+The Vita's numbers need a log with a retry.
+
+### Out of memory at wave 200 after a long session (log205-209, 1.0.10/1.0.11; runtime 1.0.12, 2026-11-04)
+One app session played waves 163-199 with many battle retries (log203-207, ~2 h). Late in it the
+256 MB heap was full five times (an emergency collection of ~3 s each, 191 -> 231 MB still in use
+after it; JS heap after collections 61 MB at wave 164, 115 MB at 200). At wave 200 a stat change's
+TileSprite asked for its canvas copy (Phaser's CanvasTexture reads its canvas back when made:
+936x1896, 7 MB, for the boss's sprite size) and got "out of memory" inside a battle phase's start():
+the phase never ended and the battle stopped, while frames went on (the "hang"). After restarting the
+app, wave 200 went through: 141 MB in use, JS 47 MB (log209).
+Causes found on the desktop with fixtures/run-wave199.json (reset + Continue, as a retry does):
+- BattleScene.reset ends with this.children.removeAll(true): on a display list the argument skips
+  the removal callbacks; nothing is destroyed. Each retry left the old battle's top-level objects
+  alive (trays, arenas, bars, candy bar, time-of-day widget: their sprites still in the update list,
+  their texts' textures kept): +35 updated objects, +43-70 textures, ~1.3 MB of JS heap per retry.
+  gamefix "a reset destroys the old battle" destroys them first (launchBattle makes them all anew),
+  and afterwards drops tweens left on destroyed objects (stopped kept ones and endless ones; one still
+  running to its end is left). Six retries: textures flat at 690 (were +43-70 each), JS heap +0.25 MB
+  each (was ~1.3), tweens +5 each (was +8: the rest are counters and target-less tweens); the battle
+  plays on after them.
+- js/fastpath.js 6c: a canvas texture copies its canvas only when its pixel copy is read. On this
+  runtime the copy was all transparent anyway (Phaser uploads the texture first, and src/canvas2d.c
+  frees an uploaded canvas's pixels), so it was up to 7 MB of zeros per stat change. tests/phaser
+  compares with Phaser's own code both ways (blank and drawn canvases, update()).
+log209 (1.0.11, the wave-200 battle from a fresh start): 36 fps, JS 30 ms, 14 draw calls. Every turn:
+the enemy's move choice (getNextMove: stats and abilities per candidate move) 250-350 ms, the
+turn-end phase (held items, an item transfer) 300-380 ms, and the item bar rebuilt from scratch on
+each item change (ModifierBar.updateModifiers: all ~46 icons with their sprites, counts and pointer
+handlers made again) ~220 of 260 ms.
+
+### A regression of 1.0.12 and stacks for long frames (log212, 1.0.12; runtime 1.0.13, 2026-11-04)
+log212 (sampler off): twice "Supplied items must be elements of the same array" at a new run's first
+encounter. TimeOfDayWidget listens to the game's onEncounterPhase event and never stops; 1.0.12's
+reset rule destroys old battles' widgets, whose listeners then tweened destroyed icons when the time
+of day changed (the event target's dispatch caught the error; the run went on). gamefix "time-of-day
+widget unsubscribes when destroyed" gives it a preDestroy that removes the listener (then
+Container.preDestroy, as before): across three retries the game's event target keeps one listener per
+event (it gained one per retry). Before 1.0.12 the old widgets were alive and animated hidden icons.
+The other listeners on that target belong to ArenaFlyout and BattleFlyout, which remove theirs.
+Also in log212, not found on the desktop: a 21 s frame in "promise jobs after frame" right after wave
+10, with frames at 55-65 ms of JS afterwards (20-25 before); 0.7-1 s frames in the starter screen's
+menus (some exactly ~1.03 s, several in a row); texture re-uploads of 30-115 ms there. The desktop
+gives the starter menus 13-20 ms frames and wave 10 -> 11 no long frame. Since logs usually have the
+sampler off, a frame (or promise jobs) still running after 0.5, 5 and 20 s now logs one JS stack each
+("[stuck] ... s into <phase>: <stack>"), at no cost otherwise.
+The 21 s after wave 10 in log212 was a big egg hatch (the owner, "skip" chosen). Desktop, 40 eggs
+added to a test save (.cache/session-eggs.json): the hatch is one 564 ms run of promise jobs between
+frames (the slow-frame report only covers frame JS, so it showed nothing); ~37x on the Vita matches
+21 s. Method timers: Egg.generatePlayerPokemon 476 ms for 40, of which PlayerPokemon.initBattleInfo
+425 ms (89%): each hatched Pokemon builds a full battle info box (~40 objects: name, level, HP bar,
+stat panel; 2.9-4.5 ms each on the desktop) that the hatch and summary screens never show; it is
+destroyed with the Pokemon after the summary. The slower frames after the hatch were the egg summary
+screen (sprites loaded as the cursor moves); after leaving it the desktop is back to its frame times
+and object counts.
+
+### Egg hatches and the item bar (runtime 1.0.14, 2026-11-04)
+- Hatches: gamefix "hatched Pokemon build their battle info on use" (two rules: the egg's
+  generatePlayerPokemon runs under js/core.js __pkrHatch; Pokemon.init asks __pkrInfoInit, which,
+  while hatching, makes battleInfo an accessor that builds it on first use exactly as init does, and
+  makes destroy() skip a never-built one). Desktop, 40 eggs with skip: 40 boxes deferred, none built;
+  the hatch's longest stretch between frames 81 ms (was 564 ms). The hatched Pokemon are the same with
+  the change on and off (species, form, IVs, nature, ability, shininess, variant, gender, tera type,
+  luck; 12 eggs under the hatch's own seed), and the summary screen shows them as before.
+- Item bar: gamefix "item bar icons kept" (one rule over ModifierBar.updateModifiers): an icon is kept
+  for its item while what getIcon() draws from is unchanged (the item's plain fields and stack counts,
+  the holder's icon atlas/frame/fusion and texture, treasure count); a kept icon is shown again and
+  loses the two pointer listeners the method adds again; one under a pointer is made anew (a new
+  one there would get a pointerover). Desktop, wave-199 fixture (31 icons): 10.3 -> 2.4 ms per rebuild;
+  screenshots of the bar identical to the game's own for the same items, a changed count and a
+  removed item.
+- js/fastpath.js 21: the input plugin's object list (1,936 interactive objects in that battle) is
+  checked with sets when an object is made interactive or removed, instead of indexOf over it: ~6%
+  of the item bar's rebuild, and every other screen that makes interactive objects.
+
+### The egg hatch on the Vita with 1.0.14 (log215, 2026-11-04)
+log215 (sampler off, waves 16-26, ~14 eggs hatched with skip between waves 25 and 26; no errors):
+- The hatch: no stretch of frame JS or promise jobs reached 0.5 s (none logged a `[stuck]` stack);
+  the window holding it has a 370 ms longest frame. log212's bigger hatch was one 21.2 s stretch.
+- The egg summary screen after it: frames at 26-31 ms of JS at the median (log212: 53-55 ms), and
+  no long frame when leaving it (log212: 2.1 s). Both are the battle info boxes that are no longer
+  built: they sat hidden in the field UI during the summary and were destroyed after it.
+  The summary's own texture re-uploads (the 249x747 and 492x404 atlases, ~35 ms each) are the same.
+- The item bar: with 7-11 items early in a run there is nothing to see (sampler off); a late run
+  is needed for its Vita number.
+- What remains slow in battles: the enemy's move choice in double battles, 1.1 s frames twice
+  (`[stuck]` stacks: getNextMove -> getAttackDamage -> getBaseDamage -> calculateBattlePower and the
+  ability hooks it applies, for every move against every target), the speed sort at a turn's start
+  (0.7 s: getEffectiveStat -> applyAbAttrs), the save at each wave (0.5-0.8 s, JSON.stringify), and
+  one 1.6 s collection after a save.
+
+### The enemy's move choice (runtime 1.0.15, 2026-11-04)
+log215's 1.1 s frames in double battles were EnemyPokemon.getNextMove (wild and trainer AI): it
+checks every usable move against every opponent for a KO, then scores every move and target, each
+with the game's damage formula, simulated. Desktop, offline game 1.12.1.1, a double battle made from
+fixtures/run-wave163.json (a second wild Pokemon added; `.cache/session-double.json`): ~31-36 ms for
+the two enemies' choices per turn (~1.1-1.3 s at the Vita's ~35x), 5 ms in a single battle. Profile:
+35% canApplyAbility (~1,150 calls per choice, applyAbAttrs asks it for every Pokemon's ability and
+passive at every hook), 22% inSpeedOrder (a priority queue that shuffles and sorts again at every pop,
+sortBySpeed's comparator computing both Pokemon's speed with all stat and ability hooks at every
+comparison), getAbility 13% of its own.
+- gamefix "enemy move choice remembers what it asks again": getNextMove runs under js/core.js
+  __pkrAIChoice, which swaps memoizing versions of canApplyAbility, getAbility, getPassiveAbility and
+  hasPassive onto Pokemon's prototype for the choice (answers per Pokemon and flag) and puts the
+  originals back after (also when it throws), so the rest of the game pays nothing.
+- gamefix "enemy move choice keeps the speed order": within a choice sortInSpeedOrder returns a copy
+  of the order it gave for the same list (its shuffle is seeded from turn and wave and restores the
+  random state).
+- gamefix "speed order sorts with each speed once": sortBySpeed computes each speed once per sort
+  (once per choice inside one) and sorts with the same comparisons; also at each turn's start.
+Desktop: the double battle's two choices 36 -> 16 ms per turn (-56%), single battle 4.2 -> 3.2 ms.
+Same moves, targets and the game's printed move scores both ways for every choice compared (60 in
+the double battle, 30 in the wave-199 single battle, each pair from the same battle random state).
+
+### A shifted clock breaks online saves; the AI on the Vita (log219, log220; runtime 1.0.16, 2026-11-05)
+- log220 (1.0.15, the owner moved the console's clock ~2 minutes back to test the pokerogue-nx
+  fork's finding): "[clock] the console's clock is off by -0.03 hours", then at wave 32's save the
+  server answered "failed to decode request body: json: cannot unmarshal number 1793852076922.301
+  into Go struct field CombinedSaveData.system.timestamp of type int", and the game went back to
+  the title. The fork was right: net.c's offset had a fraction (microseconds from gettimeofday), so
+  Date.now() did too. 1.0.16 rounds the offset to whole milliseconds (the fork truncated in nowMs).
+  Only consoles whose clock is more than 30 s off were affected.
+- The enemy's move choice (1.0.15) on the Vita, log219 waves 29-30 (double battles): no `[stuck]`
+  stack in getNextMove and no frame over 0.5 s in battle (log215, 1.0.14: seven, up to 1.15 s, in
+  double battles at waves 16-22).
+- log219's first start of 1.0.15 had one 28.4 s frame at startup: the game's code compiled again
+  for the new gamefix set (once per update; log220's start: 2.3 s for that part).
+
+### A freeze after an hour: memory, and one error that stopped the game (log225; runtime 1.0.17, 2026-11-05)
+log225 (1.0.15, ~64 minutes): a run to wave 48 (game over), ~16 minutes in the starter select screen,
+then a new run that froze at wave 31: the picture stopped, the music played on. At 226 of 256 MB of
+heap in use, "[canvas] out of memory for a 1224x357 canvas"; that canvas's native calls answered
+undefined, canvas2d.js destructured one (getTransform in fillText's shadow), the TypeError went up
+through Phaser's render, and Phaser's step, which asks for its next frame at its end, never asked
+again: 60 empty frames a second from then on. No collection ran before the failure: the heap-low one
+waits for 236 MB, and 30 MB free wasn't enough for 1.7 MB (garbage, fragmentation).
+1.0.17:
+- A canvas or image whose pixels can't be allocated makes the runtime collect garbage right there
+  (main.c host_gc_for_alloc, logged "[gc] collected when ... found no memory") and try once more.
+- A canvas without pixels answers its transform and text metrics with defaults (identity, zeros) in
+  canvas2d.js, so drawing on it does nothing instead of throwing.
+- A requestAnimationFrame callback that throws without asking for its next frame is called again
+  next frame under the same id (up to 300 frames in a row); the same error is logged 5 times, then
+  every 600th. One failing frame no longer stops the game.
+Memory over that session (JS left after each collection): 47 MB at wave 32, 59, then 69 -> 81 MB in
+the starter screen, 92 MB by the next run's wave 13; heap in use 119 -> 227 MB; Phaser textures
+516 -> 1017 (+350 in the starter screen). Desktop (wave-163 save): loading the sprites of 81 species
+(what the starter screen does for each species the cursor visits) keeps 21.7 MB more JS after a
+collection (0.27 MB, ~1,240 objects and ~8,500 properties per species: the atlas's ~88 Phaser Frame
+objects, its animation, and a copy of the atlas JSON in customData, ~18% of it, which neither Phaser's
+WebGL path nor the game reads). Nothing unloads them, in the browser either; on the Vita a long visit
+to the starter screen adds tens of MB for the rest of the session.

@@ -373,8 +373,9 @@ static void cache_write(const char *url, const char *data, size_t len) {
         // if interrupted here. Save files use the separate recoverable writer.
         remove(path);
 #endif
-        if (rename(tmp, path) != 0) remove(tmp);
+        if (rename(tmp, path) == 0) return;
     }
+    remove(tmp);
 }
 
 // ---------------------------------------------------------------- curl helpers
@@ -797,6 +798,53 @@ char *net_get_sync(const char *url, size_t *len, long *status) {
 
 // ---------------------------------------------------------------- network thread
 
+// A request that took long, and where its time went (network thread). On a slow network the game
+// waits on single requests: in log196 (busy hotel Wi-Fi) the egg gacha's save upload took ~50 s and
+// a 3 MB song held a wave's start; these lines tell the network's speed from our side.
+#define SLOW_REQUEST_S 5
+static void log_slow(req *r) {
+    CURL *e = r->easy;
+    curl_off_t total = 0, connect = 0, tls = 0, pre = 0, first = 0, up = 0, down = 0, sent = -1, queued = -1;
+    curl_easy_getinfo(e, CURLINFO_TOTAL_TIME_T, &total);
+    if (total < (curl_off_t)SLOW_REQUEST_S * 1000000) return;
+    curl_easy_getinfo(e, CURLINFO_CONNECT_TIME_T, &connect);
+    curl_easy_getinfo(e, CURLINFO_APPCONNECT_TIME_T, &tls);
+    curl_easy_getinfo(e, CURLINFO_PRETRANSFER_TIME_T, &pre);
+    curl_easy_getinfo(e, CURLINFO_STARTTRANSFER_TIME_T, &first);
+    curl_easy_getinfo(e, CURLINFO_SIZE_UPLOAD_T, &up);
+    curl_easy_getinfo(e, CURLINFO_SIZE_DOWNLOAD_T, &down);
+#if LIBCURL_VERSION_NUM >= 0x080a00
+    curl_easy_getinfo(e, CURLINFO_POSTTRANSFER_TIME_T, &sent);
+#endif
+#if LIBCURL_VERSION_NUM >= 0x080600
+    curl_easy_getinfo(e, CURLINFO_QUEUE_TIME_T, &queued);
+#endif
+    long conns = 0, ver = 0;
+    curl_easy_getinfo(e, CURLINFO_NUM_CONNECTS, &conns);
+    curl_easy_getinfo(e, CURLINFO_HTTP_VERSION, &ver);
+    char *method = NULL;
+    curl_easy_getinfo(e, CURLINFO_EFFECTIVE_METHOD, &method);
+    // no query: it can hold a session id, and the cache-busting ?t= tells nothing
+    int ulen = (int)strcspn(r->url, "?");
+    double s = total / 1e6, body_s = (total - first) / 1e6;
+    char extra[96] = "";
+    if (queued >= 0) snprintf(extra, sizeof extra, "queued %.1f s, ", queued / 1e6);
+    char upload[96] = "";
+    if (up > 0 && sent > pre)
+        snprintf(upload, sizeof upload, "sent %.0f KB in %.1f s (%.0f KB/s), ", up / 1024.0, (sent - pre) / 1e6,
+                 up / 1024.0 / ((sent - pre) / 1e6));
+    else if (up > 0)
+        snprintf(upload, sizeof upload, "sent %.0f KB, ", up / 1024.0);
+    char conn[96];
+    if (conns && tls > 0) snprintf(conn, sizeof conn, "new connection (connected at %.1f s, TLS done at %.1f s)", connect / 1e6, tls / 1e6);
+    else if (conns) snprintf(conn, sizeof conn, "new connection (connected at %.1f s)", connect / 1e6);
+    else snprintf(conn, sizeof conn, "reused connection");
+    host_log("[net] slow: %s %.*s: %.1f s | %s%sfirst byte at %.1f s, then %.0f KB in %.1f s (%.0f KB/s) | %s, HTTP/%s",
+             method ? method : "?", ulen, r->url, s, extra, upload, first / 1e6, down / 1024.0, body_s,
+             body_s > 0.05 ? down / 1024.0 / body_s : 0, conn,
+             ver == CURL_HTTP_VERSION_2_0 ? "2" : ver == CURL_HTTP_VERSION_3 ? "3" : "1.1");
+}
+
 static void submit(req *r) {
     pthread_mutex_lock(&qlock);
     r->qnext = NULL;
@@ -1037,6 +1085,7 @@ static void *net_thread(void *arg) {
             curl_easy_getinfo(r->easy, CURLINFO_RESPONSE_CODE, &r->status);
             curl_easy_getinfo(r->easy, CURLINFO_EFFECTIVE_URL, &fu);
             r->error = m->data.result == CURLE_OK ? NULL : curl_easy_strerror(m->data.result);
+            log_slow(r);
             if (r->error) {
                 host_log("[net] %s failed: %s (%s)", r->url, r->error, r->errbuf);
                 r->status = 0;
@@ -1234,7 +1283,9 @@ static void note_server_date(const char *hdrs) {
     double off = server_ms - (tv.tv_sec * 1000.0 + tv.tv_usec / 1000.0);
     clock_known = true;
     if (fabs(off) < 30000) return; // within the header's precision: the clock is fine
-    clock_offset_ms = off;
+    // whole milliseconds, as Date.now() gives: PokeRogue's server rejects a save whose timestamp
+    // has a fraction (log220: "cannot unmarshal number 1793852076922.301 ... of type int")
+    clock_offset_ms = round(off);
     host_log("[clock] the console's clock is off by %.2f hours; the game uses the server's time", off / 3600000.0);
 }
 

@@ -172,23 +172,31 @@
       // awaits every asset, and one lost download left a wave-60 load stuck for good (0.42 log).
       const retries = method === "GET" || method === "HEAD" ? GET_RETRIES : 0;
       const send = () => {
-        id = N.http(method, url, flat, bodyBytes(body), (status, headerText, ab, err, finalURL) => {
-          if (done) return;
-          if (err && attempt < retries) {
-            attempt++;
-            N.log("[net] retry " + attempt + "/" + retries + ": " + url);
-            g.setTimeout(() => { if (!done) send(); }, 500 * attempt);
-            return;
-          }
-          if (err && N.choose && SAVE_REQUEST.test(url)) {
-            connectionLost(url, err, () => { if (!done) { attempt = 0; send(); } });
-            return;
-          }
+        try {
+          id = N.http(method, url, flat, bodyBytes(body), (status, headerText, ab, err, finalURL) => {
+            if (done) return;
+            if (err && attempt < retries) {
+              attempt++;
+              N.log("[net] retry " + attempt + "/" + retries + ": " + url);
+              g.setTimeout(() => { if (!done) send(); }, 500 * attempt);
+              return;
+            }
+            if (err && N.choose && SAVE_REQUEST.test(url)) {
+              connectionLost(url, err, () => { if (!done) { attempt = 0; send(); } });
+              return;
+            }
+            done = true;
+            if (err) return reject(new TypeError("Failed to fetch: " + err));
+            const p = parseHeaders(headerText);
+            resolve({ status, statusText: p.statusText, headers: p.headers, body: ab, url: finalURL });
+          });
+        } catch (e) {
+          // Native capability checks can throw before fetch() returns. Reject
+          // asynchronously like a browser, after its caller can attach a catch;
+          // do not turn a policy denial into a connection-retry dialog.
           done = true;
-          if (err) return reject(new TypeError("Failed to fetch: " + err));
-          const p = parseHeaders(headerText);
-          resolve({ status, statusText: p.statusText, headers: p.headers, body: ab, url: finalURL });
-        });
+          g.queueMicrotask(() => reject(e));
+        }
       };
       send();
       if (signal) {

@@ -65,6 +65,7 @@ void touch_overlay_draw(void);
 void host_log(const char *fmt, ...);
 bool host_logging(void); // is there a log to write to (player builds: only with config.txt log=1)
 void host_log_flush(void); // wait until queued log lines are in log.txt
+void host_set_perf_tag(const char *tag); // appended to each [perf] line ("wave 37"); js/bootstrap.js
 void host_writes_flush(void); // wait until files queued by writeFileLater are written (js_host.c)
 double host_now_ms(void);
 void mem_breakdown(const char *stage); // logs where main memory goes
@@ -199,6 +200,7 @@ void mem_report(const char *stage); // largest malloc + system free memory, to t
 void prof_init(void);
 void prof_phase(const char *name, double ms); // time spent in one main-loop step
 void prof_poll(JSContext *ctx); // from the JS interrupt handler
+void prof_long_frame(JSContext *ctx, double t0, double now, const char *phase); // ditto: a stack at 0.5, 5, 20 s
 void prof_frame(double js_ms); // once per frame, with its JS time (slow frames are reported)
 void net_poll(JSContext *ctx);                 // deliver finished requests
 void net_pump(void);                           // progress transfers only (from long JS runs)
@@ -265,6 +267,7 @@ void config_set(const char *key, const char *value); // key=value in config.txt 
 bool fields_draw(void); // the game's text input fields (js/input.js -> __native.setFieldOverlays)
 void fields_set(int n);
 bool fields_draw_pending(void);
+bool host_gc_for_alloc(const char *what); // an allocation failed: collect, true if it did (main.c)
 void gc_at_save_request(void);       // the game saved its run: a good time to collect (main.c)
 bool text_field_shown(void);           // a game text field (login form...) was drawn last frame (js/input.js)
 void field_update(int i, const uint8_t *rgba, int w, int h, float x, float y, float dw, float dh);
@@ -286,6 +289,7 @@ bool link_event(const plat_event *ev); // true if consumed
 void link_frame(const plat_gamepad *pad);
 bool link_draw(void);
 void dialog_notice(const char *text);
+void host_notice(const char *text, int ms); // a short line over the game for ms; takes no input
 void dialog_pick_open(const char *title, const char *dir, const char *exts);
 int dialog_pick_poll(const char **path); // 0 nothing, 1 chosen, -1 cancelled (reported once)
 void dialog_choice_open(const char *title, const char *opts); // opts: one per line

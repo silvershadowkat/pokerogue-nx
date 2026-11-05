@@ -537,6 +537,10 @@ static int cmp_d(const void *a, const void *b) {
 
 static double t_main_start; // host_now_ms() at the start of main(), for the [perf] line's t=
 
+// What the game is at (js/bootstrap.js: "wave 37"), so each [perf] window says where it was taken.
+static char perf_tag[48];
+void host_set_perf_tag(const char *tag) { snprintf(perf_tag, sizeof perf_tag, "%s", tag ? tag : ""); }
+
 // Logs JS time per frame (timers, rAF = Phaser's update + render, promise jobs) every 300 frames.
 static void perf_add(double js_ms) {
     if (perf_n == 0) perf_t0 = host_now_ms();
@@ -583,10 +587,10 @@ static void perf_add(double js_ms) {
     // Sampled frames (debug builds on the Vita): how long the GPU took for one frame.
     if (gpu_n) snprintf(gpu, sizeof gpu, " | GPU %.1f ms/frame (max %.0f, %d frames)", gpu_avg, gpu_max, gpu_n);
     host_log("[perf] %.1f fps | JS per frame: avg %.2f ms, p50 %.2f, p95 %.2f, max %.2f%s | draw %.1f, swap %.1f, after %.1f ms | "
-             "in GL draw calls %.1f ms/frame (max %.0f), %d calls/frame%s%s%s | net: %s | %s | t=%.1f s",
+             "in GL draw calls %.1f ms/frame (max %.0f), %d calls/frame%s%s%s | net: %s | %s | %s%st=%.1f s",
              perf_n / secs, sum / perf_n, perf_js[perf_n / 2], perf_js[perf_n * 95 / 100], perf_js[perf_n - 1], gc,
              perf_draw_ms / perf_n, perf_swap_ms / perf_n, perf_after_ms / perf_n, gl_total / perf_n, gl_max, draws / perf_n,
-             glx, gpu, other, net, dec, (host_now_ms() - t_main_start) / 1000.0);
+             glx, gpu, other, net, dec, perf_tag, perf_tag[0] ? ", " : "", (host_now_ms() - t_main_start) / 1000.0);
     perf_gc = 0;
     perf_gc_max = 0;
     perf_swap_ms = perf_after_ms = perf_draw_ms = 0;
@@ -661,11 +665,12 @@ static void draw_hud(JSContext *ctx, double js_ms) {
 // L + R + TRIANGLE (debug builds) or "variants" on the control channel: shader variants off/on,
 // with a notice for a few seconds.
 static double notice_until;
-static const char *notice_text;
-static void notice(const char *text) {
-    notice_text = text;
-    notice_until = host_now_ms() + 3000;
+static char notice_text[200];
+void host_notice(const char *text, int ms) {
+    snprintf(notice_text, sizeof notice_text, "%s", text);
+    notice_until = host_now_ms() + ms;
 }
+static void notice(const char *text) { host_notice(text, 3000); }
 static __attribute__((unused)) void toggle_variants(void) {
     notice(gl_toggle_variants() ? "Shader variants on" : "Shader variants off (original shaders)");
 }
@@ -819,6 +824,26 @@ static void gc_at_save(void) {
     host_log("[gc] collected after the game saved: %.0f ms, JS heap %.1f -> %.1f MB", ms, before / 1048576.0, gc_left / 1048576.0);
 }
 
+// An allocation for pixels failed (canvas2d.c): collect now, from inside the game's call, and let
+// the caller try once more. log225: after an hour, at 226 of 256 MB in use, a 1224x357 canvas found
+// no room (garbage and fragmentation), its text drawing threw in Phaser's render, and the game
+// stopped. Not again until the heap has grown by 4 MB or 5 s have passed (a collection that freed
+// nothing would only repeat for every canvas drawn).
+bool host_gc_for_alloc(const char *what) {
+    static size_t used_after;
+    static double last;
+    if (!g_ctx_for_mem) return false;
+    double now = host_now_ms();
+    if (last && now - last < 5000 && heap_used() < used_after + ((size_t)4 << 20)) return false;
+    double ms;
+    size_t before = gc_collect(JS_GetRuntime(g_ctx_for_mem), &ms);
+    used_after = heap_used();
+    last = host_now_ms();
+    host_log("[gc] collected when %s found no memory: %.0f ms, JS heap %.1f -> %.1f MB, heap in use %.0f MB", what, ms,
+             before / 1048576.0, gc_left / 1048576.0, used_after / 1048576.0);
+    return true;
+}
+
 // Between frames: the heap is nearly full (less than half of HEAP_RESERVE free). Collect now, with
 // the loading screen up, rather than let an allocation fail in the game's code. Not again until the
 // heap has grown by 8 MB since (when what is left is live data, collecting again frees nothing).
@@ -854,6 +879,7 @@ static void precompile_between_frames(void) {
 static int js_interrupt(JSRuntime *rt, void *opaque) {
     (void)rt, (void)opaque;
     if (g_ctx_for_mem) prof_poll(g_ctx_for_mem);
+    if (g_ctx_for_mem && in_frame_js) prof_long_frame(g_ctx_for_mem, phase_t0, host_now_ms(), loop_phase);
     net_pump();
     busy_poll();
     if (!in_frame_js || !g_cfg.interrupt_after_s || host_now_ms() - phase_t0 < g_cfg.interrupt_after_s * 1000.0)

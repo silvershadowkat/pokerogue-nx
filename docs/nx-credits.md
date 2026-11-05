@@ -8,7 +8,9 @@ rendering and audio infrastructure, and existing optimizations are the foundatio
 of this port. We are adapting that work for Switch and Android, not claiming to
 have created it from scratch.
 
-Imported runtime revision: `ea0d7d4123a78bd112535efff5e27fbf9d3bb72b`.
+Imported runtime revision: `d7765878e987101c9838006191ad997b9900cd92` (Vita 1.0.17),
+reviewed on 2026-11-05 after baseline `ea0d7d4123a78bd112535efff5e27fbf9d3bb72b`.
+See [the platform relevance and verification record](vita-sync-2026-11-05.md).
 This repository is a direct fork of that project. Its Git history, license,
 attribution and original documentation are preserved. The original README is
 retained at [upstream-vita-readme.md](upstream-vita-readme.md).

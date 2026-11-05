@@ -36,6 +36,71 @@
 // PokeRogue's Pokémon pipeline extends it, sets per-sprite uniforms after super.onBind and calls this
 // onBatch, so it keeps a flush per sprite. Without the rule above (no __pkrS) it flushes as before.
 //
+// item list cursor without a rebuild: in the party screen's item transfer ("move items"), each up or
+// down press first set the item's quantity back to its maximum and rebuilt the whole option window
+// (every option's BBCodeText destroyed and made again, the held items looked up again), then moved
+// the cursor: ~400 ms a press on the Vita late in a run (log189, 39-45 items). The rebuild now
+// happens only when that quantity actually changes (it was lowered with left/right); otherwise the
+// window it would build is the one already there. Scrolling still rebuilds (setOptionsCursor).
+//
+// a reset destroys the old battle: BattleScene.reset (back to the title: each battle retry, a run's
+// end) ends with this.children.removeAll(true) and launchBattle(), which makes the field, arena,
+// trays, bars and UI anew. On Phaser's display list removeAll's argument skips the removal callbacks
+// rather than destroying, so the old battle's objects all stayed alive, their sprites still updated
+// every frame and their texts' textures kept: per retry +35 updated objects, +43 textures, ~1.3 MB
+// (desktop, fixtures/run-wave199.json); log207 ran out of memory at wave 200 after a session of
+// retries. js/core.js __pkrDestroyAll destroys them first.
+//
+// time-of-day widget unsubscribes when destroyed: TimeOfDayWidget listens to the game's
+// onEncounterPhase event and never stops (no destroy of its own), so an old battle's widget, destroyed
+// by the rule above, still had its icons tweened at every encounter: "Supplied items must be elements
+// of the same array" (log212). It now stops listening when destroyed (and then does what
+// Container.preDestroy does, as before).
+//
+// hatched Pokemon build their battle info on use: each egg hatched makes a full PlayerPokemon, whose
+// init() builds its battle info box (name, level, HP bar, stat panel: ~40 objects) and puts it in the
+// field UI; the hatch and its summary never show it and the Pokemon is destroyed after. That was 89%
+// of a hatch (log212: a big one, skip chosen, 21 s on the Vita; desktop 425 of 476 ms for 40 eggs).
+// The egg's generatePlayerPokemon now runs under js/core.js __pkrHatch, and init() asks
+// __pkrInfoInit first: while hatching, battleInfo is built on first use (as init builds it), and a
+// Pokemon destroyed without it never builds it.
+//
+// item bar icons kept: ModifierBar.updateModifiers (the item bars at the top of the battle) destroyed
+// every icon and made all of them again whenever an item changed: ~46 icons late in a run, each a
+// container with the item's sprite, its counts and its holder's Pokemon icon, ~250 ms on the Vita
+// and several times a turn (log209). js/core.js __pkrModBarBegin/Icon/End keep the icon of an item
+// whose drawn state is unchanged and make the others with the game's getIcon(); the rest of the method
+// (order, overflow, positions, hit areas, tooltips) runs as before.
+//
+// system save parsed with fewer calls: GameData.parseSystemData reads the system save (dex, starters,
+// eggs, stats; 220-250 KB late in a run) with JSON.parse and a reviver that the engine calls for every
+// one of its ~21,000 members: 650-900 ms on the Vita, at the title, each Continue or battle retry and
+// the egg gacha (log203: 6.7 s). The reviver only changes gameStats, eggs, ribbons (made into the
+// game's objects) and the *Attr members but three (BigInt(value ?? 0)); for every other member it
+// returns the value as it is. js/core.js __pkrParseSome parses natively and walks the result the same
+// way (src/js_host.c parseRevived), calling the reviver only for the first three and doing its BigInt
+// rule itself (which this exact text fixes): 6.5 instead of 11.7 ms on the desktop.
+//
+// enemy move choice remembers what it asks again: EnemyPokemon.getNextMove (the AI of wild and
+// trainer Pokemon) weighs every usable move against every target with the game's damage formula,
+// simulated (a possible KO, then a score per move and target). Each estimate applies the ability
+// hooks on the field (applyAbAttrs: canApplyAbility, getAbility, getPassiveAbility and hasPassive for
+// each Pokemon, ability and passive) and puts the field in speed order (inSpeedOrder: a priority queue
+// that shuffles and sorts again at each pop, every comparison working out both speeds). In a double
+// battle that was ~1,150 canApplyAbility calls and ~60 speed computations per choice: ~31 ms for
+// two enemies on the desktop, 1.1 s frames on the Vita (log215). A simulated choice changes nothing
+// those read (abilities, HP, tags, stat stages, the turn and wave seeds), so within one getNextMove
+// (js/core.js __pkrAIChoice) the four ability methods remember their answer per Pokemon (they are
+// swapped in on Pokemon's prototype for the choice and put back after, so the rest of the game
+// calls the originals), and sortInSpeedOrder its order per list of Pokemon (js/core.js
+// __pkrSpeedOrder; the shuffle in it is seeded from the turn and the wave and puts the random
+// state back). Outside a choice sortInSpeedOrder runs as before.
+//
+// speed order sorts with each speed once: sortBySpeed's comparator works out both Pokemon's speed
+// (getEffectiveStat, with every stat and ability hook) for each comparison; js/core.js __pkrSpeedSort
+// computes each once per sort (once per enemy move choice inside one) and sorts with the same
+// comparisons. The speed sort runs at each turn's start and in many ability and move checks.
+//
 // starter slots from one starter list: the starter select screen's setup (after every game reset:
 // a new run rebuilds the UI) creates its 81 slots with `getAllStarters()[i]`, and each call goes
 // through all ~1300 species to list the starters again: 4.7 s of an 11 s frame on the Vita (0.89,
@@ -130,6 +195,74 @@ static const fix FIXES[] = {
      ".set1f(`terrainColorRatio`,@1)}onBatch(@2){@2&&this.flush()}",
      ".set1f(`terrainColorRatio`,@1)}onBatch(@2){@2&&!(this.__pkrS&&this.name===`FieldSprite`)&&this.flush()}",
      NULL, "terrainColorRatio", 0},
+    {"item list cursor without a rebuild",
+     "processModifierTransferModeUpDownInput(@1){let @2=!1,@3=this.options[this.optionsCursor];"
+     "return this.partyUiMode===@4.MODIFIER_TRANSFER&&(@3!==4e3&&(this.transferQuantities[@3]=this.transferQuantitiesMax[@3]),"
+     "this.updateOptions()),@2=this.moveOptionCursor(@1),@2}",
+     "processModifierTransferModeUpDownInput(@1){let @2=!1,@3=this.options[this.optionsCursor];"
+     "return this.partyUiMode===@4.MODIFIER_TRANSFER&&@3!==4e3&&this.transferQuantities[@3]!==this.transferQuantitiesMax[@3]&&"
+     "(this.transferQuantities[@3]=this.transferQuantitiesMax[@3],this.updateOptions()),@2=this.moveOptionCursor(@1),@2}",
+     NULL, "processModifierTransferModeUpDownInput", 0},
+    {"a reset destroys the old battle",
+     "this.children.removeAll(!0),this.game.domContainer.innerHTML=``,this.launchBattle()",
+     "globalThis.__pkrDestroyAll(this.children),this.game.domContainer.innerHTML=``,this.launchBattle()",
+     NULL, "launchBattle", 0},
+    {"time-of-day widget unsubscribes when destroyed",
+     "this.add(this.timeOfDayIcons),@1.eventTarget.addEventListener(`onEncounterPhase`,this.onEncounterPhaseEvent))}getBackTweens(){",
+     "this.add(this.timeOfDayIcons),@1.eventTarget.addEventListener(`onEncounterPhase`,this.onEncounterPhaseEvent))}"
+     "preDestroy(){@1.eventTarget.removeEventListener(`onEncounterPhase`,this.onEncounterPhaseEvent),super.preDestroy()}getBackTweens(){",
+     NULL, "TimeOfDayWidget", 0},
+    {"hatched Pokemon build their battle info on use (hatch)",
+     "generatePlayerPokemon(){",
+     "generatePlayerPokemon(){return globalThis.__pkrHatch(()=>this.__pkrGenPlayer())}__pkrGenPlayer(){",
+     NULL, "generatePlayerPokemonHelper", 0},
+    {"hatched Pokemon build their battle info on use (init)",
+     "this.initBattleInfo(),@1.fieldUI.addAt(this.battleInfo,0);let getSprite=",
+     "globalThis.__pkrInfoInit(this,@1.fieldUI)||(this.initBattleInfo(),@1.fieldUI.addAt(this.battleInfo,0));let getSprite=",
+     NULL, "initBattleInfo", 0},
+    {"item bar icons kept",
+     "updateModifiers(@1,@2=!1){this.removeAll(!0);let @3=@1.filter(@1=>@1.isIconVisible()),@4=@3.filt"
+     "er(@1=>!@1.pokemonId).sort(modifierSortFunc),@5=@3.filter(@1=>@1.pokemonId).sort(modifierSortFun"
+     "c),@6=@2?@4:@4.concat(@5);@6.forEach((@1,@2)=>{let @3=@1.getIcon();@2>=@7&&@3.setVisible(!1),thi"
+     "s.add(@3),this.setModifierIconPosition(@3,@6.length),@3.setInteractive(new Phaser.Geom.Rectangle"
+     "(0,0,32,24),Phaser.Geom.Rectangle.Contains),@3.on(`pointerover`,()=>{@8.ui.showTooltip(@1.type.n"
+     "ame,@1.type.getDescription()),this.modifierCache&&this.modifierCache.length>@7&&this.updateModif"
+     "ierOverflowVisibility(!0)}),@3.on(`pointerout`,()=>{@8.ui.hideTooltip(),this.modifierCache&&this"
+     ".modifierCache.length>@7&&this.updateModifierOverflowVisibility(!1)})});for(let @1 of this.getAl"
+     "l())this.sendToBack(@1);this.modifierCache=@1}updateModifierOverflowVisibility(",
+     "updateModifiers(@1,@2=!1){globalThis.__pkrModBarBegin(this);let @3=@1.filter(@1=>@1.isIconVisibl"
+     "e()),@4=@3.filter(@1=>!@1.pokemonId).sort(modifierSortFunc),@5=@3.filter(@1=>@1.pokemonId).sort("
+     "modifierSortFunc),@6=@2?@4:@4.concat(@5);@6.forEach((@1,@2)=>{let @3=globalThis.__pkrModBarIcon("
+     "this,@1);@2>=@7&&@3.setVisible(!1),this.add(@3),this.setModifierIconPosition(@3,@6.length),@3.se"
+     "tInteractive(new Phaser.Geom.Rectangle(0,0,32,24),Phaser.Geom.Rectangle.Contains),@3.on(`pointer"
+     "over`,()=>{@8.ui.showTooltip(@1.type.name,@1.type.getDescription()),this.modifierCache&&this.mod"
+     "ifierCache.length>@7&&this.updateModifierOverflowVisibility(!0)}),@3.on(`pointerout`,()=>{@8.ui."
+     "hideTooltip(),this.modifierCache&&this.modifierCache.length>@7&&this.updateModifierOverflowVisib"
+     "ility(!1)})});for(let @1 of this.getAll())this.sendToBack(@1);globalThis.__pkrModBarEnd(this),th"
+     "is.modifierCache=@1}updateModifierOverflowVisibility(",
+     NULL, "updateModifierOverflowVisibility", 0},
+    {"system save parsed with fewer calls",
+     "JSON.parse(@7,(@1,@2)=>{if(@1===`gameStats`)return new @3(@2);if(@1===`eggs`){let @1=[];@2===null&&(@2=[]);"
+     "for(let @4 of @2)@1.push(new @5(@4));return @1}return @1===`ribbons`?@6.fromJSON(@2):@1.endsWith(`Attr`)&&"
+     "![`natureAttr`,`abilityAttr`,`passiveAttr`].includes(@1)?BigInt(@2??0):@2})",
+     "globalThis.__pkrParseSome(@7,(@1,@2)=>{if(@1===`gameStats`)return new @3(@2);if(@1===`eggs`){let @1=[];@2===null&&(@2=[]);"
+     "for(let @4 of @2)@1.push(new @5(@4));return @1}return @1===`ribbons`?@6.fromJSON(@2):@1.endsWith(`Attr`)&&"
+     "![`natureAttr`,`abilityAttr`,`passiveAttr`].includes(@1)?BigInt(@2??0):@2},"
+     "[`gameStats`,`eggs`,`ribbons`],`Attr`,[`natureAttr`,`abilityAttr`,`passiveAttr`])",
+     NULL, "parseSystemData", 0},
+    {"enemy move choice remembers what it asks again",
+     "getNextMove(){let @1=this.getMoveQueue();",
+     "getNextMove(){return globalThis.__pkrAIChoice(this,()=>this.__pkrNextMove())}__pkrNextMove(){let @1=this.getMoveQueue();",
+     NULL, "getNextMove", 0},
+    {"enemy move choice keeps the speed order",
+     "function sortInSpeedOrder(@1){let @2=groupPokemon(@1);return shufflePokemonList(@2),sortBySpeed(@2),@2.flat()}",
+     "function sortInSpeedOrder(@1){return globalThis.__pkrSpeedOrder(@1,()=>{let @2=groupPokemon(@1);"
+     "return shufflePokemonList(@2),sortBySpeed(@2),@2.flat()})}",
+     NULL, "sortInSpeedOrder", 0},
+    {"speed order sorts with each speed once",
+     "@1.sort((@2,@3)=>{let @4=getPokemon(@2[0]).getEffectiveStat(5);return getPokemon(@3[0]).getEffectiveStat(5)-@4})",
+     "globalThis.__pkrSpeedSort(@1,getPokemon)",
+     NULL, "sortBySpeed", 0},
     {"icon loops: destroyed icons dropped, hidden ones left",
      "for(let[@1,@2]of this.icons)@1.y=@2.restY+this.getCurrentOffset(@2.mode)",
      "globalThis.__pkrIconSync(this)",

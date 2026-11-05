@@ -123,12 +123,240 @@
   g.queueMicrotask = (fn) => { Promise.resolve().then(fn); };
 
   function report(e) { N.log("[js] uncaught: " + (e && e.stack ? e + "\n" + e.stack : e)); }
+  // The same error again and again (a frame callback failing every frame): logged 5 times, then
+  // once more every 600.
+  const reported = new Map();
+  function reportOnce(e) {
+    if (e && e.expectedBySmokeTest) return; // tests/smoke: errors it throws on purpose
+    const key = String(e && e.stack ? e + e.stack : e);
+    const n = (reported.get(key) || 0) + 1;
+    if (reported.size < 100 || reported.has(key)) reported.set(key, n);
+    if (n <= 5 || n % 600 === 0) report(n > 5 ? new Error("(" + n + " times) " + e) : e);
+  }
 
   // 128 zeros the game's code reads (only copies them, with flat()) where gamefix.c took out its
   // loops that built them.
   Object.defineProperty(g, "__pkrZero128", { value: new Array(128).fill(0) });
   // The shiny colour arrays gamefix.c keeps, per variant colour cache entry.
   Object.defineProperty(g, "__pkrMemo", { value: new WeakMap() });
+  // JSON.parse(text, reviver) for a reviver that can only change the values of keys in `names` or
+  // ending in `suffix`, and returns every other value as it is (gamefix.c "system save parsed with
+  // fewer calls"). The same walk as the standard's (each value's members first, in key order; a
+  // reviver result of undefined deletes the member), but the reviver only runs for those keys
+  // instead of all ~21,000 of a late system save (650-900 ms on the Vita, log203).
+  // BattleScene.reset ends with this.children.removeAll(true), meant to drop the old battle's objects:
+  // on a display list that argument only skips the removal callbacks, so every top-level object (field,
+  // arena, trays, bars...) stayed alive, with its sprites in the update list and its texts' textures,
+  // once per battle retry: +35 updated objects, +43 textures, ~+1.3 MB of JS heap each on the desktop
+  // (gamefix.c "a reset destroys the old battle"). launchBattle makes them all anew; here they are
+  // destroyed first. One that throws is left as before.
+  // Then, after this frame's JS (reset runs in a tween's onComplete), the tweens left on destroyed
+  // objects go too: ones kept to be replayed (persist, stopped) and endless ones (repeat -1), all of
+  // whose targets are destroyed game objects (the time-of-day widget's: +8 tweens per retry). A
+  // tween still running to its end is left: the game may wait for its onComplete.
+  const isDead = (t) => t && typeof t.destroy === "function" && "scene" in t && !t.scene;
+  const sweepTweens = (tweens) => {
+    if (!tweens || typeof tweens.getTweens !== "function") return;
+    for (const tw of tweens.getTweens()) {
+      const ts = tw.targets;
+      if (!Array.isArray(ts) || !ts.length || !ts.every(isDead)) continue;
+      const playing = typeof tw.isPlaying === "function" && tw.isPlaying();
+      if (playing && tw.loop !== -1) continue;
+      try { tweens.remove(tw); tw.destroy(); } catch (e) { report(e); }
+    }
+  };
+  Object.defineProperty(g, "__pkrDestroyAll", { value: (displayList) => {
+    const scene = displayList.scene;
+    for (const o of displayList.list.slice()) {
+      try { if (o && o.scene && typeof o.destroy === "function") o.destroy(); } catch (e) { report(e); }
+    }
+    if (scene && scene.tweens) Promise.resolve().then(() => sweepTweens(scene.tweens));
+    return displayList.removeAll(true);
+  } });
+  // Hatching eggs (gamefix.c "hatched Pokemon build their battle info on use"): every hatched Pokemon
+  // is a full PlayerPokemon, whose init() builds its battle info box (~40 objects: name, level, HP bar,
+  // stats) and puts it in the field UI. The hatch and its summary never show it, and the Pokemon is
+  // destroyed after: 89% of a hatch (log212: 21 s for a big one, skip chosen). While an egg makes its
+  // Pokemon, init() leaves battleInfo to be built on first use (then as init does: initBattleInfo,
+  // then added to the field UI at index 0); destroy() skips one never built.
+  let hatching = 0;
+  const lazyInfoStats = { deferred: 0, built: 0 };
+  Object.defineProperty(g, "__pkrHatch", { value: (fn) => {
+    hatching++;
+    try { return fn(); } finally { hatching--; }
+  } });
+  Object.defineProperty(g, "__pkrLazyInfoStats", { value: () => Object.assign({}, lazyInfoStats) });
+  Object.defineProperty(g, "__pkrInfoInit", { value: (pokemon, fieldUI) => {
+    if (!hatching || rt.lazyBattleInfo === false || !fieldUI || typeof pokemon.initBattleInfo !== "function" ||
+        Object.prototype.hasOwnProperty.call(pokemon, "battleInfo") && pokemon.battleInfo) return false;
+    lazyInfoStats.deferred++;
+    const ownDestroy = Object.prototype.hasOwnProperty.call(pokemon, "destroy");
+    const unhook = () => {
+      delete pokemon.battleInfo;
+      if (!ownDestroy) delete pokemon.destroy;
+    };
+    Object.defineProperty(pokemon, "battleInfo", {
+      configurable: true, enumerable: true,
+      get() {
+        unhook();
+        lazyInfoStats.built++;
+        pokemon.initBattleInfo();
+        fieldUI.addAt(pokemon.battleInfo, 0);
+        return pokemon.battleInfo;
+      },
+      set(v) { unhook(); pokemon.battleInfo = v; },
+    });
+    if (!ownDestroy) {
+      pokemon.destroy = function () {
+        unhook();
+        pokemon.battleInfo = undefined; // never built: nothing to destroy
+        return pokemon.destroy.apply(this, arguments);
+      };
+    }
+    return true;
+  } });
+  // The item bar (gamefix.c "item bar icons kept"): ModifierBar.updateModifiers destroyed all its
+  // ~46 icons and made them again on every item change (each a container, the item's sprite, its
+  // counts, the holder's Pokemon icon): ~250 ms on the Vita, several times a turn late in a run
+  // (log209). Here an icon is kept for its item while everything getIcon() draws from is the same:
+  // the item's own plain fields (counts, battles left...), its stack counts, and for a held item
+  // the holder's icon (atlas, frame, fusion, as addPokemonIcon picks them, and whether that texture
+  // is loaded) and treasure count. A kept icon gets back what updateModifiers then sets afresh: shown,
+  // without the two pointer listeners it adds again. One under a pointer is made anew (a new icon there
+  // gets a pointerover, which shows the tooltip and the bar's overflow row). Icons not used again are
+  // destroyed.
+  const barStats = { kept: 0, made: 0 };
+  Object.defineProperty(g, "__pkrModBarStats", { value: () => Object.assign({}, barStats) });
+  const iconSig = (m, scene) => {
+    const parts = [];
+    for (const k of Object.keys(m)) {
+      const v = m[k];
+      if (v === null || (typeof v !== "object" && typeof v !== "function")) parts.push(k, String(v));
+    }
+    const t = m.type;
+    parts.push(t && t.iconImage, t && t.id);
+    if (typeof m.getMaxStackCount === "function") parts.push(m.getMaxStackCount());
+    if (typeof m.getStackCount === "function") parts.push(m.getStackCount());
+    const p = m.pokemonId && typeof m.getPokemon === "function" ? m.getPokemon() : null;
+    if (p) {
+      const key = p.getIconAtlasKey(true, true), id = p.getIconId(true, true), fused = p.isFusion(true);
+      const tex = scene && scene.textures && scene.textures.exists(key) ? scene.textures.get(key) : null;
+      parts.push("pk", p.id, p.name, p.isPlayer && p.isPlayer(), key, id, tex ? tex.has(id) : "unloaded", fused,
+        typeof p.getPersistentTreasureCount === "function" ? p.getPersistentTreasureCount() : "");
+      if (fused) parts.push(p.getFusionIconAtlasKey(true, true), p.getFusionIconId(true, true));
+    }
+    return parts.join("\u0001");
+  };
+  const pools = new WeakMap();
+  Object.defineProperty(g, "__pkrModBarBegin", { value: (bar) => {
+    if (rt.keepBarIcons === false) { pools.delete(bar); return bar.removeAll(true); }
+    const pool = new Map();
+    for (const icon of bar.list) {
+      if (icon && icon._pkrMod && !pool.has(icon._pkrMod)) pool.set(icon._pkrMod, icon);
+      else if (icon) pool.set(icon, icon); // (not one of ours: destroyed at the end)
+    }
+    bar.removeAll(false);
+    pools.set(bar, pool);
+  } });
+  Object.defineProperty(g, "__pkrModBarIcon", { value: (bar, m) => {
+    const pool = pools.get(bar);
+    if (!pool) return m.getIcon();
+    const sig = iconSig(m, bar.scene);
+    const kept = pool.get(m);
+    const over = kept && kept.scene && kept.scene.input && kept.scene.input._over;
+    let hovered = false;
+    if (over) for (const k in over) if (Array.isArray(over[k]) && over[k].includes(kept)) hovered = true;
+    if (kept && kept._pkrSig === sig && kept.scene && !hovered) {
+      pool.delete(m);
+      barStats.kept++;
+      kept.setVisible(true);
+      kept.off("pointerover"), kept.off("pointerout");
+      return kept;
+    }
+    barStats.made++;
+    const icon = m.getIcon();
+    icon._pkrMod = m, icon._pkrSig = sig;
+    return icon;
+  } });
+  Object.defineProperty(g, "__pkrModBarEnd", { value: (bar) => {
+    const pool = pools.get(bar);
+    if (!pool) return;
+    pools.delete(bar);
+    for (const icon of pool.values()) if (icon.scene) icon.destroy();
+  } });
+  // The enemy's move choice (gamefix.c "enemy move choice remembers what it asks again"): within one
+  // getNextMove, these Pokemon methods remember their answer per Pokemon (and first argument, a flag
+  // for two of them), and sortInSpeedOrder its order per list; speeds (__pkrSpeedSort) are kept too.
+  // The choice only simulates, so nothing they read changes during it. The methods are swapped in on
+  // the prototype that defines them for the choice and put back after. Switch: __rt.aiMemo = false.
+  const AI_KEPT = ["canApplyAbility", "getAbility", "getPassiveAbility", "hasPassive"];
+  let aiMemo = null;
+  const aiStats = { choices: 0, calls: 0, kept: 0, speeds: 0, speedsKept: 0, orders: 0, ordersKept: 0 };
+  function keepAnswers(pokemon) {
+    const undo = [];
+    for (const name of AI_KEPT) {
+      let owner = pokemon;
+      while (owner && !Object.prototype.hasOwnProperty.call(owner, name)) owner = Object.getPrototypeOf(owner);
+      if (!owner || owner === pokemon || typeof owner[name] !== "function") continue;
+      const orig = owner[name], answers = new Map();
+      owner[name] = function (flag) {
+        if (arguments.length > 1) return orig.apply(this, arguments);
+        aiStats.calls++;
+        let m = answers.get(this);
+        if (!m) answers.set(this, (m = [undefined, undefined]));
+        const k = flag ? 1 : 0;
+        if (m[k] !== undefined) { aiStats.kept++; return m[k]; }
+        return (m[k] = orig.apply(this, arguments));
+      };
+      undo.push(() => { owner[name] = orig; });
+    }
+    return undo;
+  }
+  Object.defineProperty(g, "__pkrAIStats", { value: () => Object.assign({}, aiStats) });
+  Object.defineProperty(g, "__pkrAIChoice", { value: (pokemon, fn) => {
+    if (aiMemo || rt.aiMemo === false) return fn();
+    aiMemo = { speed: new Map(), orders: [] };
+    aiStats.choices++;
+    const undo = keepAnswers(pokemon);
+    try { return fn(); } finally { aiMemo = null; for (const u of undo) u(); }
+  } });
+  // sortInSpeedOrder (gamefix.c "enemy move choice keeps the speed order"): within a move choice the
+  // same list (the same objects in the same order) gets the same order: a copy of the one kept.
+  Object.defineProperty(g, "__pkrSpeedOrder", { value: (list, fn) => {
+    if (!aiMemo) return fn();
+    aiStats.orders++;
+    outer: for (const o of aiMemo.orders) {
+      if (o.list.length !== list.length) continue;
+      for (let i = 0; i < list.length; i++) if (o.list[i] !== list[i]) continue outer;
+      aiStats.ordersKept++;
+      return o.order.slice();
+    }
+    const order = fn();
+    aiMemo.orders.push({ list: list.slice(), order: order.slice() });
+    return order;
+  } });
+  // sortBySpeed (gamefix.c "speed order sorts with each speed once"): the same comparisons, with each
+  // Pokemon's speed computed once per sort (once per move choice inside one).
+  Object.defineProperty(g, "__pkrSpeedSort", { value: (list, getPokemon) => {
+    if (rt.aiMemo === false)
+      return list.sort((a, b) => { const n = getPokemon(a[0]).getEffectiveStat(5); return getPokemon(b[0]).getEffectiveStat(5) - n; });
+    const memo = aiMemo ? aiMemo.speed : new Map();
+    const speed = (group) => {
+      const p = getPokemon(group[0]);
+      aiStats.speeds++;
+      let v = memo.get(p);
+      if (v === undefined) memo.set(p, (v = p.getEffectiveStat(5)));
+      else aiStats.speedsKept++;
+      return v;
+    };
+    return list.sort((a, b) => { const n = speed(a); return speed(b) - n; });
+  } });
+  // bigintExcept: see parseRevived.
+  Object.defineProperty(g, "__pkrParseSome", { value: (text, reviver, names, suffix, bigintExcept) => {
+    // members: src/js_host.c parseRevived; then the root, as the standard does last
+    const holder = { "": N.parseRevived(String(text), reviver, names, suffix, bigintExcept) };
+    return reviver.call(holder, "", holder[""]);
+  } });
   // PokemonIconAnimHelper's two loops (gamefix.c "party icons of destroyed slots dropped"): every
   // 200 ms and every frame of a jump they set the y of all the helper's icons, and the starter
   // select screen's helper keeps ~90 icons, still moved all run long while the screen is hidden
@@ -172,7 +400,17 @@
     const q = rafQueue;
     rafQueue = [];
     const ts = now - start;
-    for (const r of q) { try { r.fn(ts); } catch (e) { report(e); } }
+    for (const r of q) {
+      const queued = rafQueue.length;
+      try { r.fn(ts); } catch (e) {
+        reportOnce(e);
+        // Phaser asks for its next frame at the end of its step: one exception (log225: out of
+        // memory in a text's drawing) would stop the game for good while its sound plays on. A
+        // callback that threw before asking again is called again next frame, under the same id
+        // (up to 300 frames in a row: a one-off callback that always throws isn't kept forever).
+        if ((r.retries = (r.retries || 0) + 1) <= 300 && !rafQueue.slice(queued).some((n) => n.fn === r.fn)) rafQueue.push(r);
+      }
+    }
     // Timers due by the frame's start, in due order, after the game's frame: when a frame runs
     // long, the game sees released buttons (in its frame) before its button-repeat intervals fire;
     // run first, those repeated a press the player had already let go of (cursor skipping an entry

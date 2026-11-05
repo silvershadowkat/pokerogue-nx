@@ -282,6 +282,175 @@ async function run() {
     b.destroy(), c.destroy(), d.destroy();
     report("fastpath: measuring makes no texture; a destroyed text's texture serves the same text", !detail, detail);
   }
+  // js/fastpath.js 4b: rex's BBCodeText (the game's rich text), built the way PokeRogue builds its
+  // option lists (constructor, setShadow, setLineSpacing, two setTexts, then its width), gives the
+  // same sizes, lines and canvas pixels as rex's own code, with one draw per text; destroyed ones'
+  // textures serve the same texts again.
+  {
+    const sc = game.scene.getScene("test");
+    let detail = "";
+    try {
+      // Phaser's ES module build has no Phaser.Class (the game's full build does), which rex uses
+      // to mix Phaser's components into its classes: the same as Phaser's Class.mixin.
+      const mixin = (cls, list) => {
+        for (const m of [].concat(list)) for (const k of Object.keys(m)) {
+          const v = m[k];
+          if (v && typeof v === "object" && (typeof v.get === "function" || typeof v.set === "function"))
+            Object.defineProperty(cls.prototype, k, { get: v.get, set: v.set, configurable: true, enumerable: true });
+          else cls.prototype[k] = v;
+        }
+      };
+      const ns = globalThis.Phaser;
+      if (!ns.Class) globalThis.Phaser = Object.assign({}, ns, { Class: { mixin } });
+      // (a UMD script: evaluated as a classic script it sets globalThis.rexbbcodetextplugin)
+      try { (0, eval)(await (await fetch("./rexbbcodetextplugin.js")).text()); } finally { globalThis.Phaser = ns; }
+      game.plugins.install("rexBBCodeTextPlugin", globalThis.rexbbcodetextplugin, true);
+    } catch (e) { detail = "plugin: " + e + " " + String(e.stack).slice(0, 300); }
+    if (!detail && !rt.rexTextPatched) detail = "not patched";
+    if (!detail) {
+      const words = ["Leftovers", "All (12)", "[color=#e05040]Big Root[/color]", "↑", "Choice Specs", "Lum Berry"];
+      const build = (i) => {
+        const s = words[i];
+        const t = sc.add.rexBBCodeText(20, 20 + i * 30, s, { fontFamily: "sans-serif", fontSize: "48px", color: "#f8f8f8", padding: { bottom: 6 }, maxLines: 1 });
+        t.setScale(1 / 3).setShadow(4, 5, "#606060");
+        t.setLineSpacing(20);
+        if (i % 2) t.setText(s + " [color=#f89890](" + i + ")[/color]");
+        t.setText("[shadow]" + t.text + "[/shadow]");
+        return t;
+      };
+      const state = (t) => [t.width, t.height, t.displayWidth, t.displayOriginX, t.getWrappedText().join("|")].join(",");
+      const pixels = (t) => Array.from(t.context.getImageData(0, 0, t.canvas.width, t.canvas.height).data).join();
+      const round = async (lazy) => {
+        rt.fastpath.set(lazy);
+        const s0 = rt.rexTextStats();
+        const ts = words.map((_, i) => build(i));
+        const st = ts.map(state);
+        await nextFrames(game, 3);
+        const s1 = rt.rexTextStats();
+        return { ts, st, px: ts.map(pixels), draws: s1.draws - s0.draws, updates: s1.updates - s0.updates, reused: s1.reused - s0.reused };
+      };
+      const ref = await round(false);
+      ref.ts.forEach((t) => t.destroy());
+      const a = await round(true);
+      const texs = a.ts.map((t) => t.frame.source.glTexture);
+      a.ts.forEach((t) => t.destroy());
+      const b = await round(true);
+      const reusedTex = b.ts.filter((t, i) => t.frame.source.glTexture === texs[i]).length;
+      const st2 = b.ts.map(state);
+      b.ts.forEach((t) => t.destroy());
+      const bad = a.st.findIndex((s, i) => s !== ref.st[i]), badPx = a.px.findIndex((p, i) => p !== ref.px[i]);
+      detail = ref.updates ? "rex's own code was patched while off (" + ref.updates + ")"
+        : bad >= 0 ? "size or lines of \"" + words[bad] + "\": " + a.st[bad] + " vs " + ref.st[bad]
+        : badPx >= 0 ? "pixels of \"" + words[badPx] + "\" differ"
+        : a.draws !== words.length ? a.draws + " draws for " + words.length + " texts (" + a.updates + " changes)"
+        : a.updates < 3 * words.length ? "only " + a.updates + " changes went through the patch"
+        : b.reused !== words.length || reusedTex !== words.length ? "textures reused: " + b.reused + " (" + reusedTex + " the same)"
+        : st2.some((s, i) => s !== ref.st[i]) ? "sizes after reuse differ" : "";
+    }
+    rt.fastpath.set(true);
+    report("fastpath: rex BBCodeText drawn once, when rendered, the same as rex's own drawing", !detail, detail);
+  }
+  // js/fastpath.js 6c: a canvas texture reads its canvas back only when its pixel copy is used. Its
+  // pixel methods give what Phaser's own code gives on this runtime, for a canvas blank when the
+  // texture is made and for one with a drawing, before and after drawing more and update().
+  {
+    const sc = game.scene.getScene("test");
+    let detail = rt.canvasCopySwap ? "" : "not installed";
+    if (!detail) {
+      const CP = Phaser.Display.Canvas.CanvasPool, px = (p) => (p ? [p.r, p.g, p.b, p.a].join(",") : "none");
+      const run = (lazy, drawnFirst) => {
+        rt.lazyCanvasCopy = lazy;
+        const c = CP.create2D(sc, 64, 48), cx = c.getContext("2d"), key = "copy-test-" + lazy + drawnFirst;
+        const draw = () => { cx.fillStyle = "#ff8000", cx.fillRect(0, 0, 64, 48), cx.fillStyle = "#0040ff", cx.fillRect(10, 5, 4, 4); };
+        if (drawnFirst) draw();
+        const s0 = rt.canvasCopyStats();
+        const tex = sc.textures.addCanvas(key, c);
+        const copiesWhenMade = rt.canvasCopyStats().copies - s0.copies;
+        const out = [px(tex.getPixel(11, 6)), px(tex.getPixel(40, 40))];
+        if (!drawnFirst) draw();
+        cx.fillStyle = "#00ff00", cx.fillRect(40, 40, 2, 2);
+        tex.update();
+        out.push(px(tex.getPixel(11, 6)), px(tex.getPixel(40, 40)));
+        sc.textures.remove(key);
+        rt.lazyCanvasCopy = true;
+        return { out: out.join(" "), copiesWhenMade };
+      };
+      for (const drawnFirst of [false, true]) {
+        const ref = run(false, drawnFirst), got = run(true, drawnFirst);
+        if (!detail && got.out !== ref.out) detail = (drawnFirst ? "drawn" : "blank") + " canvas: " + got.out + " vs Phaser's " + ref.out;
+        if (!detail && got.copiesWhenMade) detail = "read back when made";
+        if (!detail && !/0,255,0,255$/.test(got.out)) detail = "update() didn't read the canvas: " + got.out;
+      }
+    }
+    report("fastpath: a canvas texture copies its pixels only when they are used", !detail, detail);
+  }
+  // js/fastpath.js 21: the input plugin's object list kept with sets gives Phaser's list, order and
+  // input states through objects made interactive, destroyed, disabled and enabled again, and new ones.
+  {
+    const sc = game.scene.getScene("test");
+    let detail = rt.inputListSwap ? "" : "not installed";
+    if (!detail) {
+      const run = async (on) => {
+        rt.fastpath.set(on);
+        const mk = (n) => sc.add.image(10 + n, 10, "atlas", 0).setName("i" + n).setInteractive();
+        const objs = Array.from({ length: 30 }, (_, i) => mk(i));
+        await nextFrames(game, 2);
+        for (const i of [3, 7, 8, 20]) objs[i].destroy();
+        objs[11].disableInteractive(), objs[12].removeInteractive();
+        objs[12].setInteractive(); // removed, then made interactive again before the update
+        const more = Array.from({ length: 5 }, (_, i) => mk(100 + i));
+        more[2].destroy(); // queued and destroyed in the same frame
+        await nextFrames(game, 2);
+        objs[5].removeInteractive(), objs[5].setInteractive();
+        await nextFrames(game, 2);
+        const all = objs.concat(more);
+        const out = sc.input._list.filter((o) => all.includes(o)).map((o) => o.name).join(",") + " | " +
+          all.map((o) => (o.input ? (o.input.enabled ? "e" : "d") : "-")).join("");
+        all.forEach((o) => o.scene && o.destroy());
+        await nextFrames(game, 2);
+        return out + " | left " + sc.input._list.filter((o) => all.includes(o)).length;
+      };
+      const ref = await run(false), got = await run(true);
+      rt.fastpath.set(true);
+      detail = got !== ref ? got + " vs Phaser's " + ref : "";
+    }
+    report("fastpath: the input plugin's object list kept with sets is Phaser's", !detail, detail);
+  }
+  // js/lazy_ui.js: handlers PokeRogue's UI sets up at each reset are built on first use instead. A
+  // never-built one is destroyed without its destroy() (which reads what setup() made); a used one is
+  // built then, its objects in the order they would have had; a built one's destroy() runs.
+  {
+    const sc = game.scene.getScene("test");
+    let detail = rt.lazyUiStats ? "" : "not installed";
+    if (!detail) {
+      const mk = () => {
+        const ui = sc.add.container(0, 0), log = [];
+        class Base { constructor(n) { this.n = n; } setup() { this.box = sc.make.image({ key: "atlas" }, false).setName(this.n); ui.add(this.box); } show() { log.push("show " + this.n); return this.box.name; } destroy() { log.push("destroy " + this.box.name); } }
+        // (the names matter: lazy_ui defers by class name)
+        const C = { GameChallengesUiHandler: class GameChallengesUiHandler extends Base {}, AchvsUiHandler: class AchvsUiHandler extends Base {},
+          PartyUiHandler: class PartyUiHandler extends Base {} };
+        ui.handlers = [new C.PartyUiHandler("party"), new C.GameChallengesUiHandler("challenges"), new C.AchvsUiHandler("achvs")];
+        return { ui, log };
+      };
+      const order = (ui) => ui.list.map((o) => o.name).join(",");
+      // reference: the same calls with the handlers set up as the game does, all at once
+      const ref = mk();
+      for (const h of ref.ui.handlers) h.setup();
+      const s0 = rt.lazyUiStats();
+      const a = mk();
+      a.ui.setName("ui-test"); // what UI.setup does first: lazy_ui looks at the handlers then
+      for (const h of a.ui.handlers) h.setup();
+      const deferred = rt.lazyUiStats().deferred - s0.deferred;
+      const shown = a.ui.handlers[2].show();
+      let threw = "";
+      try { a.ui.handlers[1].destroy(); a.ui.handlers[2].destroy(); a.ui.handlers[0].destroy(); } catch (e) { threw = String(e); }
+      detail = deferred !== 2 ? deferred + " handlers deferred (want 2)" : shown !== "achvs" ? "show gave " + shown
+        : threw ? "destroy threw: " + threw : a.log.join(";") !== "show achvs;destroy achvs;destroy party" ? "calls: " + a.log.join(";")
+        : order(a.ui) !== "party,achvs" ? "order " + order(a.ui) + " (reference " + order(ref.ui) + ")" : "";
+      a.ui.destroy(), ref.ui.destroy();
+    }
+    report("lazy_ui: deferred handlers built on use, destroyed unbuilt without their destroy()", !detail, detail);
+  }
   // js/fastpath.js trimmed quads: images drawn without the transparent part of their quads (in a
   // container: src/fastpath.c; alone: batchFast) give the same frame as the whole quads. Whole
   // scales: where a pixel centre falls exactly on a texel edge (scale 1.25: every 5 pixels), either
@@ -342,20 +511,24 @@ async function run() {
     report("webgl: a destroyed framebuffer frees its renderbuffer and texture", !detail, detail);
   }
   // js/fastpath.js covered objects: an opaque image covering the camera hides the top-level
-  // children before its own; they still go in the camera's render list. Not when it isn't opaque.
+  // children before its own; the interactive ones still go in the camera's render list, in drawing
+  // order (the input plugin sorts by it). Not when the cover isn't opaque.
   {
     const sc = game.scene.getScene("test"), cam = sc.cameras.main, sx = cam.scrollX, sy = cam.scrollY;
     await addBase64(sc, "cover-test", OPAQUE_PNG);
     cam.setScroll(0, 0); // (only an unscrolled camera is checked)
     const below = sc.add.container(0, 0), belowImg = sc.make.image({ x: 10, y: 10, key: "trim-test" }, false);
     below.add(belowImg);
+    belowImg.setInteractive();
+    const mid = sc.add.image(20, 20, "trim-test").setInteractive();
     const ui = sc.add.container(0, 0);
     const cover = sc.make.image({ x: 0, y: 0, key: "cover-test" }, false).setOrigin(0).setDisplaySize(cam.worldView.width, cam.worldView.height);
     ui.add(cover);
     const s0 = rt.coverStats ? rt.coverStats().skipped : 0;
     await nextFrames(game, 35); // (looked for every 30 frames)
     const s1 = rt.coverStats ? rt.coverStats().skipped : 0;
-    const listed = cam.renderList.includes(belowImg) && cam.renderList.includes(below) && cam.renderList.includes(cover);
+    const rl = cam.renderList, at = (o) => rl.indexOf(o);
+    const listed = at(belowImg) >= 0 && at(belowImg) < at(mid) && at(mid) < at(cover);
     cover.setAlpha(0.99);
     await nextFrames(game, 3);
     const s2 = rt.coverStats ? rt.coverStats().skipped : 0;
@@ -363,7 +536,7 @@ async function run() {
     const s3 = rt.coverStats ? rt.coverStats().skipped : 0;
     const detail = !rt.coverStats ? "not installed" : !(s1 > s0) ? "nothing skipped under the cover"
       : !listed ? "skipped objects missing from the render list" : s3 !== s2 ? "skipped under a translucent cover" : "";
-    below.destroy(), ui.destroy();
+    below.destroy(), mid.destroy(), ui.destroy();
     cam.setScroll(sx, sy);
     report("fastpath: an opaque screen-covering image hides what is under it", !detail, detail);
   }

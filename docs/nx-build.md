@@ -46,7 +46,7 @@ First launch downloads/caches the official menu artwork and font. Online loads t
 
 ## Updating upstream
 
-Merge reviewed `krappaU/pokerogue-vita` commits normally from the `upstream` remote on a dedicated branch. Keep platform additions in the SDL platform layer, launcher/input modules and packaging scripts. Record the revision in `game/handheld/upstream.json`. The current imported runtime is `ea0d7d4123a78bd112535efff5e27fbf9d3bb72b`.
+Merge reviewed `krappaU/pokerogue-vita` commits normally from the `upstream` remote on a dedicated branch. Keep platform additions in the SDL platform layer, launcher/input modules and packaging scripts. Record the revision in `game/handheld/upstream.json`. The current imported runtime is `d7765878e987101c9838006191ad997b9900cd92` (1.0.17). See the [2026-11-05 review](vita-sync-2026-11-05.md).
 
 The release game is fetched at runtime; updating the older `game/` reference subtree is a separate maintenance task. If the live game changes its private UI fields, review the direct-touch adapter against official source. Its generator is `game/handheld/build-native-touch.cjs`, requiring TypeScript. The generated `runtime/js/handheld-touch.js` is committed, so normal runtime builds do not require Node or a game build.
 

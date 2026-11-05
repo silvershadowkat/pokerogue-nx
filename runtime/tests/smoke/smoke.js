@@ -84,6 +84,27 @@ async function run() {
     const a = await nextFrame(), b = await nextFrame();
     if (!(b > a)) return "rAF times " + a + ", " + b;
   });
+  await check("core: a frame loop whose callback throws once keeps running", async () => {
+    // like Phaser's step: asks for the next frame at its end, so a throw would end the loop
+    let calls = 0, id = 0;
+    const step = () => {
+      calls++;
+      if (calls === 2) throw Object.assign(new Error("one bad frame"), { expectedBySmokeTest: true });
+      if (calls < 5) id = requestAnimationFrame(step);
+    };
+    id = requestAnimationFrame(step);
+    for (let i = 0; i < 8; i++) await nextFrame();
+    if (calls !== 5) return "the loop ran " + calls + " times, 5 expected";
+    // a callback cancelled after it threw isn't called again
+    let other = 0;
+    const once = () => { other++; throw Object.assign(new Error("always throws"), { expectedBySmokeTest: true }); };
+    const oid = requestAnimationFrame(once);
+    await nextFrame(); await nextFrame();
+    cancelAnimationFrame(oid);
+    const seen = other;
+    await nextFrame(); await nextFrame();
+    if (seen < 1 || other !== seen) return "cancelled callback called " + other + " times (" + seen + " before)";
+  });
   await check("core: TextEncoder/TextDecoder round trip", () => {
     const s = "Pokémon ★ ポケモン";
     const b = new TextEncoder().encode(s);
@@ -300,6 +321,205 @@ async function run() {
     if (ff.calls !== 9) return "starter filters: getVals called " + ff.calls + " times for 3 filterings (plain " + fp.calls + ")";
     if (ff.own) return "starter filters: getVals not put back";
   });
+  await check("gamefix: a reset destroys the old battle's objects and the tweens left on them", async () => {
+    const fixed = await import("./assets/reset-Pk7rTst5.js"); // a chunk: src/gamefix.c rewrites it
+    const text = await (await fetch("./assets/reset-Pk7rTst5.js")).text();
+    const plain = new Function(text.replace(/export (function|class)/g, "$1") + "\nreturn { Scene };")();
+    const run = async (mod) => {
+      const scene = {}, log = [];
+      const obj = (n) => ({ n, scene, destroy() { log.push("destroy " + n); this.scene = undefined; } });
+      const objs = [obj("field"), obj("trays"), obj("bars")];
+      const tween = (n, targets, playing, loop) => ({ n, targets, loop, isPlaying: () => playing, destroy() { log.push("tween " + n); } });
+      const tweens = [tween("kept", [objs[0]], false, 0), tween("endless", [objs[1]], true, -1), tween("running", [objs[2]], true, 0),
+        tween("alive", [{ scene, destroy() {} }], false, 0)];
+      scene.tweens = { getTweens: () => tweens.slice(), remove(t) { tweens.splice(tweens.indexOf(t), 1); } };
+      const children = { scene, list: objs.slice(), removeAll() { this.list.length = 0; log.push("removeAll"); } };
+      const sc = new mod.Scene(children, { domContainer: {} });
+      sc.finish();
+      await new Promise((r) => setTimeout(r, 0)); // the tween sweep runs after the frame's JS
+      return { log: log.join(", "), launched: sc.launched, left: tweens.map((t) => t.n).join(",") };
+    };
+    const f = await run(fixed), p = await run(plain);
+    eq(p.log, "removeAll", "plain");
+    eq(f.log, "destroy field, destroy trays, destroy bars, removeAll, tween kept, tween endless", "rewritten");
+    eq(f.launched + "/" + p.launched, "1/1", "launchBattle");
+    eq(f.left, "running,alive", "tweens left");
+  });
+  await check("gamefix: the item bar keeps the icons of unchanged items, and shows the same", async () => {
+    const fixed = await import("./assets/bar-Pk7rTst8.js"); // a chunk: src/gamefix.c rewrites it
+    const text = await (await fetch("./assets/bar-Pk7rTst8.js")).text();
+    const plain = new Function(text.replace(/export (function|class)/g, "$1") + "\nreturn { makeBar };")();
+    const run = (mod) => {
+      let made = 0, destroyed = 0;
+      const scene = { input: { _over: { 0: [] } }, textures: { exists: () => true, get: () => ({ has: () => true }) } };
+      class Base {
+        constructor() { this.list = []; this.scene = scene; }
+        removeAll(destroy) { const l = this.list; this.list = []; if (destroy) l.forEach((c) => c.destroy()); }
+        add(c) { this.list.push(c); }
+        getAll() { return this.list.slice(); }
+        getIndex(c) { return this.list.indexOf(c); }
+        sendToBack(c) { this.list.splice(this.list.indexOf(c), 1); this.list.unshift(c); }
+        setModifierIconPosition(n, len) { n.x = this.getIndex(n) + "/" + len; }
+      }
+      const icon = (label) => {
+        made++;
+        const ev = {};
+        return { label, scene, visible: true, x: 0, setVisible(v) { this.visible = v; return this; }, setInteractive() { return this; },
+          on(e, f) { (ev[e] || (ev[e] = [])).push(f); return this; }, off(e) { delete ev[e]; return this; }, count: () => Object.values(ev).flat().length,
+          destroy() { this.scene = undefined; destroyed++; } };
+      };
+      const item = (id, n, pokemonId) => ({ type: { id, name: id, iconImage: id, getDescription: () => "" }, stackCount: n, pokemonId,
+        isIconVisible: () => true, getMaxStackCount: () => 99, getStackCount() { return this.stackCount; },
+        getPokemon: () => null, getIcon() { return icon(id + "x" + this.stackCount); } });
+      const mods = Array.from({ length: 14 }, (_, i) => item("item" + i, 1 + (i % 3), i % 2 ? 0 : i + 1));
+      const Bar = mod.makeBar(Base, { ui: { showTooltip() {}, hideTooltip() {} } }, 12, (a, b) => (a.type.id < b.type.id ? -1 : 1),
+        { Geom: { Rectangle: class { static Contains() {} } } });
+      const bar = new Bar(), out = [];
+      const snap = () => out.push(bar.list.map((c) => c.label + "@" + c.x + (c.visible ? "" : "H") + ":" + c.count()).join(" "));
+      bar.updateModifiers(mods); snap();
+      bar.updateModifiers(mods); snap();
+      mods[4].stackCount++; bar.updateModifiers(mods); snap();
+      mods.splice(6, 1); bar.updateModifiers(mods); snap();
+      return { out: out.join(" | "), made, destroyed, left: bar.list.length };
+    };
+    const f = run(fixed), p = run(plain);
+    eq(f.out, p.out, "icons");
+    if (f.made !== 14 + 1 || f.destroyed !== 2) return "rewritten: made " + f.made + ", destroyed " + f.destroyed + " (plain " + p.made + ", " + p.destroyed + ")";
+  });
+  await check("gamefix: hatched Pokemon build their battle info only when it is used", async () => {
+    const fixed = await import("./assets/hatch-Pk7rTst7.js"); // a chunk: src/gamefix.c rewrites it
+    const text = await (await fetch("./assets/hatch-Pk7rTst7.js")).text();
+    const plain = new Function(text.replace(/export (function|class)/g, "$1") + "\nreturn { make };")();
+    const run = (mod) => {
+      const log = [], ui = [];
+      class Info { destroy() { log.push("destroyed"); } }
+      const b = { fieldUI: { addAt: (o, i) => { ui.splice(i, 0, o); log.push("added at " + i); } } };
+      const { Egg, Pokemon } = mod.make(b, Info, log);
+      const unused = new Egg().generatePlayerPokemon();
+      log.push("|");
+      unused.destroy();
+      log.push("|");
+      const used = new Egg().generatePlayerPokemon();
+      log.push("|");
+      const info = used.battleInfo;
+      log.push(info instanceof Info && ui[0] === info ? "same object first in the UI" : "wrong object");
+      used.destroy();
+      log.push("|");
+      new Pokemon(); // not hatching: as before
+      return log.join(", ");
+    };
+    eq(run(plain), "built, added at 0, |, destroyed, |, built, added at 0, |, same object first in the UI, destroyed, |, built, added at 0", "plain");
+    eq(run(fixed), "|, |, |, built, added at 0, same object first in the UI, destroyed, |, built, added at 0", "rewritten");
+  });
+  await check("gamefix: the enemy's move choice keeps answers and speeds within one choice, same result", async () => {
+    const fixed = await import("./assets/ai-Pk7rTst9.js"); // a chunk: src/gamefix.c rewrites it
+    const text = await (await fetch("./assets/ai-Pk7rTst9.js")).text();
+    const plain = new Function(text.replace(/export (function|class)/g, "$1") + "\nreturn { make };")();
+    const run = (mod) => {
+      const log = [], b = { field: [] };
+      const { Pokemon, EnemyPokemon, sortInSpeedOrder } = mod.make(b, log);
+      const methods = ["canApplyAbility", "getAbility", "getPassiveAbility", "hasPassive"].map((n) => Pokemon.prototype[n]);
+      const foe = new EnemyPokemon("E", 80, 10, true);
+      b.field = [new Pokemon("A", 50, 10, true), foe, new Pokemon("B", 80, 0, false), new Pokemon("C", 120, 10, false)];
+      const choice = foe.getNextMove(), during = log.length;
+      const counts = {};
+      for (const l of log) { const k = l.split(" ")[0]; counts[k] = (counts[k] || 0) + 1; }
+      log.length = 0;
+      const after = sortInSpeedOrder(b.field).map((p) => p.name).join("") + " " + foe.canApplyAbility() + foe.canApplyAbility();
+      const outside = log.length;
+      b.fail = true;
+      let threw = false;
+      try { foe.getNextMove(); } catch (e) { threw = true; }
+      const restored = threw && ["canApplyAbility", "getAbility", "getPassiveAbility", "hasPassive"].every((n, i) => Pokemon.prototype[n] === methods[i]);
+      return { choice, after, restored, counts, during, outside };
+    };
+    const f = run(fixed), p = run(plain);
+    eq(f.choice, p.choice, "choice");
+    eq(f.after, p.after, "after the choice");
+    if (!f.restored || !p.restored) return "methods not put back after a choice that threw";
+    // kept: each speed once, each canApplyAbility (Pokemon, flag) once, each ability once
+    eq(f.counts, { speed: 4, can: 6, ability: 6, hasPassive: 4, passive: 2 }, "rewritten calls");
+    if (p.during <= f.during * 2) return "plain " + p.during + " calls, rewritten " + f.during;
+    if (f.outside >= p.outside) return "outside a choice, rewritten " + f.outside + " calls, plain " + p.outside;
+  });
+  await check("gamefix: a destroyed time-of-day widget stops listening to encounters", async () => {
+    const fixed = await import("./assets/widget-Pk7rTst6.js"); // a chunk: src/gamefix.c rewrites it
+    const text = await (await fetch("./assets/widget-Pk7rTst6.js")).text();
+    const plain = new Function(text.replace(/export (function|class)/g, "$1") + "\nreturn { makeWidget };")();
+    const run = (mod) => {
+      const log = [];
+      class Base { add() {} preDestroy() { log.push("container preDestroy"); } }
+      const B = { eventTarget: new EventTarget() };
+      const W = mod.makeWidget(Base, B), w = new W();
+      B.eventTarget.dispatchEvent(new Event("onEncounterPhase"));
+      if (typeof w.preDestroy === "function") w.preDestroy();
+      B.eventTarget.dispatchEvent(new Event("onEncounterPhase"));
+      return w.seen + " " + log.join(",");
+    };
+    eq(run(fixed), "1 container preDestroy", "rewritten");
+    eq(run(plain), "2 container preDestroy", "plain");
+  });
+  await check("gamefix: the system save parsed with fewer calls gives the same data", async () => {
+    const fixed = await import("./assets/system-Pk7rTst4.js"); // a chunk: src/gamefix.c rewrites it
+    const text = await (await fetch("./assets/system-Pk7rTst4.js")).text();
+    const plain = new Function(text.replace(/export (function|class)/g, "$1") + "\nreturn { makeGameData };")();
+    class GameStats { constructor(s) { this.s = s; } }
+    class Egg { constructor(e) { this.e = e; } }
+    const Ribbons = { fromJSON: (r) => (r === "gone" ? undefined : { ribbons: r }) };
+    const N = globalThis.__native, orig = N.parseRevived;
+    let native = 0;
+    N.parseRevived = function () { native++; return orig.apply(this, arguments); };
+    // a system save's shapes: dex and starter entries with *Attr members (numbers, strings, null),
+    // the three that stay numbers, eggs (or null), stats, ribbons deep down (one revived to nothing)
+    const dexData = {}, starterData = {};
+    for (let i = 1; i <= 400; i++) {
+      dexData[i] = { seenAttr: i * 977, caughtAttr: i % 7 ? String(2 ** 40 + i) : null, natureAttr: i, seenCount: i % 5, ivs: [1, 2, 3, i % 32, 5, 6] };
+      starterData[i] = { moveset: null, eggMoves: i % 16, candyCount: i, abilityAttr: 3, passiveAttr: 1, valueReduction: 0, ribbons: i % 50 ? 0 : "gone", classicWinCount: 0 };
+    }
+    const save = JSON.stringify({ trainerId: 1, secretId: 2, dexData, starterData, gameStats: { battles: 5, nested: { xAttr: 2 } },
+      eggs: [{ id: 1, tierAttr: 3 }, { id: 2 }], voucherCounts: { 0: 1 }, unlocks: { 0: true }, achvUnlocks: {}, timestamp: 1 });
+    const ser = (x) => JSON.stringify(x, (k, v) => (typeof v === "bigint" ? "big:" + v : v && typeof v === "object" && !Array.isArray(v) && v.constructor !== Object ? { [v.constructor.name]: Object.assign({}, v) } : v));
+    let f, p;
+    try {
+      f = ser(fixed.makeGameData(GameStats, Egg, Ribbons).parseSystemData(save));
+      p = ser(plain.makeGameData(GameStats, Egg, Ribbons).parseSystemData(save));
+    } finally { N.parseRevived = orig; }
+    eq(f, p, "system data");
+    if (!native) return "the rewritten code didn't use parseRevived";
+    // and the error a bad *Attr value gives
+    const bad = JSON.stringify({ dexData: { 1: { seenAttr: 1.5 } } });
+    const err = (mk) => { try { mk.makeGameData(GameStats, Egg, Ribbons).parseSystemData(bad); return "none"; } catch (e) { return e.name; } };
+    eq(err(fixed), err(plain), "error");
+  });
+  await check("gamefix: the item transfer list rebuilds only when a quantity changes", async () => {
+    const fixed = await import("./assets/party-Pk7rTst3.js"); // a chunk: src/gamefix.c rewrites it
+    const text = await (await fetch("./assets/party-Pk7rTst3.js")).text();
+    const plain = new Function(text.replace(/export (function|class)/g, "$1") + "\nreturn { makeParty };")();
+    const X = { MODIFIER_TRANSFER: 7, CHECK: 3 };
+    // up/down presses with left/right quantity changes in between, on items and on cancel (4e3)
+    const run = (mod, mode) => {
+      const Party = mod.makeParty(X);
+      const ui = new Party();
+      Object.assign(ui, { partyUiMode: mode, options: [0, 1, 2, 3, 4e3], optionsCursor: 0,
+        transferQuantities: [3, 1, 5, 2], transferQuantitiesMax: [3, 4, 5, 2], rebuilds: 0, window: "" });
+      ui.updateOptions = function () { this.rebuilds++; this.window = this.transferQuantities.join(","); };
+      ui.moveOptionCursor = function (e) { this.optionsCursor = (this.optionsCursor + (e ? 1 : this.options.length - 1)) % this.options.length; return true; };
+      ui.updateOptions();
+      const out = [];
+      for (const [k, v] of [["d"], ["d"], ["q", 2], ["u"], ["d"], ["d"], ["d"], ["d"], ["q", 1], ["u"], ["u"]]) {
+        if (k === "q") { ui.transferQuantities[ui.options[ui.optionsCursor]] = v; ui.updateOptions(); continue; }
+        const r = ui.processModifierTransferModeUpDownInput(k === "u" ? 0 : 1);
+        out.push(r + ":" + ui.optionsCursor + ":" + ui.transferQuantities.join(",") + ":" + ui.window);
+      }
+      return { out: out.join(" "), rebuilds: ui.rebuilds };
+    };
+    for (const mode of [X.MODIFIER_TRANSFER, X.CHECK]) {
+      const f = run(fixed, mode), p = run(plain, mode);
+      eq(f.out, p.out, "transfer list " + mode);
+      const want = mode === X.MODIFIER_TRANSFER ? 6 : 3; // first build + 2 left/right changes (+ 3 resets to the maximum)
+      if (f.rebuilds !== want) return "transfer list: " + f.rebuilds + " rebuilds, want " + want + " (plain " + p.rebuilds + ")";
+    }
+  });
   await check("net: Blob, object URLs and FileReader", async () => {
     const blob = new Blob(["abc", new Uint8Array([100, 101])], { type: "text/plain" });
     eq(blob.size, 5, "size");
@@ -354,6 +574,18 @@ async function run() {
     eq(Array.from(d.slice(16, 20)), [255, 255, 0, 255], "background");
     const b = Array.from(d.slice(8, 12)); // half-transparent blue over yellow
     if (Math.abs(b[0] - 127) > 3 || Math.abs(b[2] - 128) > 3 || b[3] !== 255) return "blended pixel " + b;
+  });
+  await check("canvas2d: a canvas without pixels (out of memory) draws nothing and doesn't throw", () => {
+    // 40000 px wide: plutovg refuses it, as an allocation that failed (log225); the runtime collects
+    // garbage and tries once more, then the canvas stays without pixels
+    const c = document.createElement("canvas");
+    c.width = 40000; c.height = 4;
+    const x = c.getContext("2d");
+    x.shadowColor = "#000"; x.shadowOffsetX = 1;
+    x.font = "16px sans-serif";
+    x.fillText("text", 0, 0); x.strokeText("text", 0, 0); x.fillRect(0, 0, 2, 2);
+    const m = x.measureText("text"), t = x.getTransform();
+    if (typeof m.width !== "number" || t.a !== 1) return "metrics " + m.width + ", transform a " + t.a;
   });
   await check("canvas2d: measureText", () => {
     const ctx = document.createElement("canvas").getContext("2d");
@@ -441,7 +673,18 @@ async function run() {
   });
 
   // ------------------------------------------------------------ connection lost (last: it leaves its dialog open)
-  await check("net: a save request without a connection waits behind the retry dialog", async () => {
+  await check(__native.clientMode === "online"
+    ? "net: a save request without a connection waits behind the retry dialog"
+    : "net: local profiles reject account requests without a retry dialog", async () => {
+    if (__native.clientMode === "offline" || __native.clientMode === "debug") {
+      // NX local profiles deliberately cannot reach account endpoints. Keep
+      // that boundary while exercising the inherited offline smoke fixture.
+      let denied = false;
+      try { await fetch("http://127.0.0.1:1/savedata/system/verify", { method: "POST", body: "{}" }); }
+      catch (e) { denied = /Network access is disabled/.test(String(e)); }
+      if (!denied || __rt.netLostWaiting()) return "local account request was not rejected before a retry dialog";
+      return;
+    }
     const ctrl = new AbortController();
     let settled = "";
     const p = fetch("http://127.0.0.1:1/savedata/system/verify", { method: "POST", body: "{}", signal: ctrl.signal })

@@ -87,7 +87,7 @@ Docker image and is tested in Vita3K (does it boot?) and on the real Vita (perfo
    container walk, sprite batching, uniforms and flushes; lazily built UI; translation cache;
    native save encryption; work moved off the main thread) and the open items below.
 
-## Open items (2026-10-30, runtime 1.0.4)
+## Open items (2026-11-03, runtime 1.0.10)
 Performance:
 - Battles run at ~28-40 fps on the Vita (log171: JS 25-33 ms a frame at the median, GPU 15-20 ms), so
   JS sets the frame rate. Where it goes (12 reports, samples): Phaser's render JS 21%, tweens 20%,
@@ -97,6 +97,50 @@ Performance:
 - Pauses that remain are the game's own work: a move animation's first use (300-575 ms), the save
   at each wave (JSON.stringify ~300 ms), atlas loading, screen setup, and collections (1.5-2 s,
   placed under loading screens and after saves where possible).
+- Next candidates, ranked (2026-11-03, runtime 1.0.10; log203: a late run, waves 163-175, 216 s of
+  frames over 250 ms in ~45 minutes):
+  (1.0.11 did a first part of 1 and 2: the reviver runs for ~1 in 20 members, and the settings,
+  achievements, stats, egg gacha, challenges and Pokedex scan screens are built on first use;
+  Vita numbers pending.)
+  1. Loading the system save: GameData.parseSystemData is a JSON.parse whose reviver runs for every
+     key (~21,000 in a 220 KB save), 650-900 ms each time it runs (title, Continue, each battle
+     retry, the egg gacha): 6.7 s in log203. The reviver changes only gameStats, eggs, ribbons and
+     the *Attr keys (BigInt); on the desktop the plain parse is a quarter of the time (3.0 of 11.6
+     ms). A native walk that calls the game's reviver only for those keys (a gamefix rule on its
+     exact text) should save ~0.6 s per load. (The BigInt replacer of the saves' JSON.stringify
+     costs only ~10%: not worth it.)
+  2. Back to the title and into the run again (each "retry battle", Continue): one 5-6.4 s frame
+     rebuilding the screens, then 1.1 and 2 s frames; ~80 s over 8 resets in log203. Its profile is
+     cut off (the slow-frame sampler keeps 1024 samples: 5.3 s "stack not stored"), so first a longer
+     sample buffer for such frames, then a desktop profile with fixtures/run-wave163.json
+     (scene.reset(true) from the control channel).
+  3. The reward shop opening, ~1 s each wave (13 frames, 12 s: its option texts, TM compatibility,
+     the item pool's thresholds).
+  4. Battle frames: 27 fps on average, JS 40 ms, 17 draw calls a frame: still the main lever
+     (native-renderer.md). The item screens: ~45 ms of JS a frame while open, with nothing changing.
+  5. Collections grow with the run: 1.4-2.6 s late in it (JS heap 95 MB before one), already placed
+     after saves and under loading screens.
+  6. The item bar (ModifierBar.updateModifiers) rebuilds all ~46 icons on every item change: ~220 ms,
+     several times a turn late in a run (log209). Reusing the icons of unchanged items is the next
+     per-turn win; the enemy's move choice (250-350 ms a turn) is the game's own logic.
+  7. Hatching many eggs at once (skip chosen): ~0.5 s per egg on the Vita, 89% of it building a
+     battle info box per hatched Pokemon that is never shown (log212: 21 s). A battle info built on
+     first use for hatched Pokemon would need three gamefix rules (the hatch, Pokemon.init, destroy).
+  (1.0.14: 6 and 7 done: item bar icons kept, hatched Pokemon's battle info built on use. log215:
+  ~14 eggs hatched with no stretch over 0.5 s (log212: 21 s), the summary screen at half the frame
+  time; the item bar's Vita number needs a late-run log.)
+  8. The enemy's move choice in double battles: 1.1 s frames (log215), the game's damage estimate
+     for each move and target with its ability hooks. (1.0.15: answers and speeds kept within one
+     choice; desktop -56% in a double battle; log219: no frame over 0.5 s in double battles.)
+  (1.0.12: memory over long sessions: retries no longer leave the old battle alive, and canvas
+  textures no longer copy their canvas when made; log207 ran out of memory at wave 200.)
+  9. Memory over long sessions (log225, a freeze after an hour): every species whose sprite is
+     loaded keeps ~0.27 MB of JS (desktop) for the rest of the session (Phaser's atlas frames and
+     animation); the starter screen loads one per species the cursor visits. Unloading the atlases
+     and animations no object uses (and the atlas JSON copy nothing reads) would bound it. (1.0.17:
+     a failed allocation collects and retries, and one failing frame no longer stops the game.)
+  Network, not ours to fix: the save after each wave uploads 255-265 KB (game and session data);
+  on busy Wi-Fi 17-74 s (5-31 KB/s). Smaller uploads would need the server to accept compression.
 
 Reliability and maintenance (from [review-2026-10.md](review-2026-10.md); findings 3, 4, 5 and 9
 done in 1.0.4: renderbuffer leak, disk cache cleaning, missing-compiler message, download check):
@@ -105,6 +149,12 @@ done in 1.0.4: renderbuffer leak, disk cache cleaning, missing-compiler message,
 - Cg reserved-word renaming doesn't rename uniform/attribute lookups (finding 7; latent).
 - No fallback to the last working game version if a new PokeRogue release breaks the shim (risk 4
   above); no scheduled check that runs the offline game to the title screen.
+
+From the pokerogue-nx fork (Switch/Android, merged our 1.0.6; reviewed 2026-11-03), to keep in mind:
+- Done in 1.0.16 (confirmed in log220): with the console's clock more than 30 s off, Date.now() had a
+  fraction (net.c's offset), and PokeRogue's save API rejected the save; the offset is now whole ms.
+- Login and register screens without D-pad navigation (login still needs a tap or SELECT-and-cross
+  after the password); the fork's runtime/js/modal-controls.js adds focus navigation. Not ported yet.
 
 Features and checks:
 - Untested on the console: save import/export and the restart after an import (0.41), QR links (0.40).
