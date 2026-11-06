@@ -39,7 +39,7 @@ The cross/chevron paths and pose constants are retained: 96% stable visual wrapp
 
 Seven small vector textures are warmed before first input. A cached GPU framebuffer composites their group opacity correctly. Rocking and lighting change GPU geometry/uniforms; D-pad movement does not rasterize/re-upload the control image. Static poses reuse their GPU composite. Action layers update only on pressed state, visibility or dimensions. Fully faded controls add no rendering loop, while their hit regions can still wake on the first touch.
 
-The launcher cycles **Touch pad: Off / Fade / Always**. Fade hides after two seconds without fingers down, using the original 180 ms fade. Direct menu taps remain a separate option. Previous `touchpad=1` preferences now mean Fade; `2` means Always. RC5 fresh installs default to Fade; existing Off/Fade/Always preferences are preserved.
+The launcher cycles **Touch pad: Off / Fade / Always**. Fade hides after two seconds without fingers down, using the original 180 ms fade. From beta.2, Off enables direct menu taps and Fade/Always use only the pad. Previous `touchpad=1` preferences now mean Fade; `2` means Always. RC5 fresh installs default to Fade; existing Off/Fade/Always preferences are preserved.
 
 ## Verification and remaining device work
 
@@ -52,3 +52,9 @@ Differential tests compare 15,045 native resolver/pose cases and ordered multi-p
 The original browser Move Touch Controls editor/saved layouts and native haptics are not integrated in this candidate. The native client currently uses the original default geometry/material with context-sensitive groups. Retroid feel is maintainer-confirmed; Switch thumb-slide and feel testing remains pending.
 
 Build the reference driver with a host C compiler and `-lm`, then run `runtime/tests/touch_reference_test.cjs` with TypeScript available to Node. `PKR_TOUCH_REFERENCE_DRIVER` can override the driver path; Windows defaults to WSL Ubuntu, Linux runs it directly.
+
+Beta.3 adds the missing starter-team Start and Random direct-tap targets. They use
+the existing localized labels and upstream Submit/Random cursor Action paths,
+including normal team validation. Hidden labels, open filter dropdowns, blocked
+handlers and pad-only modes cannot trigger them. The runtime adapter is shared
+by Online, Offline and Debug; no game archive or battle-rule change is needed.

@@ -24,3 +24,41 @@ native.directTouch=false;tap(220,180);assert.equal(fired,1,'Pad-only mode must n
 send('pointerdown',220,180,1);send('pointerup',220,180,2);assert.equal(fired,1,'Another finger cannot release a selection');send('pointerup',220,180,1);assert.equal(fired,2);
 send('pointerdown',220,180);scene.ui.mode=33;send('pointerup',220,180);assert.equal(fired,2,'A mode transition cannot click through');
 console.log('PASS: official modal callbacks, field focus, 4:3 letterbox, disabled touch, pointer ownership and mode transitions');
+
+// Upstream keeps the visible action labels immediately before their normally
+// hidden selection cursors in partyColumn. Use localized text and screen-space
+// bounds, so the test cannot pass via English text matching or fixed positions.
+const cursor=()=>({visible:false,setVisible(v){this.visible=v;}});
+const startLabel={...rect(270,156,45,15),text:'Démarrer'};
+const randomLabel={...rect(270,24,45,15),text:'Zufall'};
+const startCursor=cursor(),randomCursor=cursor(),partyCursor=cursor();
+const column={visible:true,list:[startLabel,startCursor,randomLabel,randomCursor]};
+for(const o of column.list)o.parentContainer=column;
+let starts=0,randoms=0,leftGrid=0;
+const starter={active:true,filterMode:true,filterBar:{openDropDown:false},
+  startCursorObj:startCursor,randomCursorObj:randomCursor,partyCursorObj:partyCursor,
+  setFilterMode(v){this.filterMode=v;},
+  leaveGrid(){leftGrid++;},showRandomCursor(){randomCursor.setVisible(true);}};
+scene.ui.mode=10;scene.ui.getHandler=()=>starter;
+scene.ui.processInput=button=>{
+  if(button===4){starts++;return;}
+  assert.equal(button,5,'Random uses the ordinary upstream Action path');
+  assert.equal(starter.filterMode,false);
+  assert.equal(startCursor.visible,false);
+  assert.equal(partyCursor.visible,false);
+  assert.equal(randomCursor.visible,true);
+  assert.equal(leftGrid,randoms+1);
+  randoms++;
+};
+tap(580,390);assert.equal(starts,1,'Start label works while its cursor is hidden and filters have focus');
+startCursor.visible=true;partyCursor.visible=true;
+tap(580,120);assert.equal(randoms,1,'Random enters its ordinary upstream focus and action path');
+starter.filterMode=true;starter.filterBar.openDropDown=true;
+tap(580,390);tap(580,120);assert.equal(starts,1);assert.equal(randoms,1,'Open dropdown cannot click through to actions');
+starter.filterBar.openDropDown=false;column.visible=false;
+tap(580,390);tap(580,120);assert.equal(starts,1);assert.equal(randoms,1,'Hidden party column has no action targets');
+column.visible=true;starter.blockInput=true;
+tap(580,390);assert.equal(starts,1,'Blocked starter handler cannot submit');
+starter.blockInput=false;native.directTouch=false;
+tap(580,390);tap(580,120);assert.equal(starts,1);assert.equal(randoms,1,'Pad-only mode cannot invoke starter action targets');
+console.log('PASS: localized starter Start/Random targets, hidden cursors, upstream action dispatch, dropdown/visibility/input guards');

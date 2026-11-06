@@ -72,6 +72,25 @@ function regions():Region[] {
     texts.forEach((o:View,i:number)=>add(o,o.text,()=>select(i),20));
     if(ui.mode===UiMode.COMMAND) add(h.teraButton,"Terastallize",()=>select(4));
   } else if(ui.mode===UiMode.STARTER_SELECT) {
+    if(!h.filterBar?.openDropDown) {
+      // Upstream's partyColumn places each visible, localized action label
+      // immediately before its selection cursor. The cursor is normally hidden;
+      // use its label's actual bounds rather than fixed coordinates or English.
+      const actionLabel=(cursor:View)=>{
+        const children=cursor?.parentContainer?.list;
+        const label=children?.[children.indexOf(cursor)-1];
+        return typeof label?.text==="string" ? label : null;
+      };
+      add(actionLabel(h.startCursorObj),"Start",()=>ui.processInput(Button.SUBMIT));
+      if(typeof h.leaveGrid==="function" && typeof h.showRandomCursor==="function") {
+        add(actionLabel(h.randomCursorObj),"Random",()=>{
+          h.setFilterMode(false);
+          h.startCursorObj.setVisible(false);h.partyCursorObj.setVisible(false);
+          h.leaveGrid();h.showRandomCursor();
+          ui.processInput(Button.ACTION);
+        });
+      }
+    }
     if(!h.filterMode) {
       h.starterContainers?.forEach((o:View,i:number)=>add(o.icon ?? o, o.species?.name ?? `Starter ${i+1}`,()=>{
         h.startCursorObj.setVisible(false);h.randomCursorObj.setVisible(false);h.partyCursorObj.setVisible(false);
