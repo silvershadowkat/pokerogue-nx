@@ -47,7 +47,7 @@ index d9e3d1acc076de3c7408dbfd583fc43624abdc77..3d2e6d5e1034219fe073d0150cd906ca
  
  // TODO: What type of number does this store?
 diff --git a/src/@types/ui-types.ts b/src/@types/ui-types.ts
-index 3bbe7239f27e4390bccd004925a09f1c6e4d39e3..7f49dce0401d738eb80a5843232786adedd9d5e2 100644
+index 3bbe7239f27e4390bccd004925a09f1c6e4d39e3..d15b69c13ee24749dd6a74de5d090bfb48802302 100644
 --- a/src/@types/ui-types.ts
 +++ b/src/@types/ui-types.ts
 @@ -14,6 +14,7 @@ export interface TextStyleOptions {
@@ -67,12 +67,14 @@ index 3bbe7239f27e4390bccd004925a09f1c6e4d39e3..7f49dce0401d738eb80a5843232786ad
  export interface OptionSelectModeConfig<T extends OptionSelectItem = OptionSelectItem> extends OptionMenuSettings {
    /** The {@linkcode OptionSelectItem}s to display. */
    options: T[];
-@@ -55,6 +58,17 @@ export interface OptionSelectModeConfig<T extends OptionSelectItem = OptionSelec
+@@ -55,6 +58,19 @@ export interface OptionSelectModeConfig<T extends OptionSelectItem = OptionSelec
  
  /** General settings for how a menu should behave */
  export interface OptionMenuSettings {
 +  /** SilverShadow editor list navigation, applied only to the Debug game. */
 +  readonly initialCursor?: number;
++  readonly initialScrollCursor?: number;
++  readonly onCursorChange?: (fullCursor: number, scrollCursor: number) => void;
 +  readonly measureVisibleOptionsOnly?: boolean;
 +  readonly pageStep?: number;
 +  readonly pageStepMinIndex?: number;
@@ -469,23 +471,41 @@ index 6859a1f7623e1ad46c39ebbe52f77aeeedd80539..f875ba9e5242c93f8b57cbebfb5e7d21
  
 diff --git a/src/debug/sandbox-menu.ts b/src/debug/sandbox-menu.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..4c8479129e344addab8f8039e0e6494631e98b2d
+index 0000000000000000000000000000000000000000..77e256e4a56efadb0a02249782669fbf36612b71
 --- /dev/null
 +++ b/src/debug/sandbox-menu.ts
-@@ -0,0 +1,72 @@
+@@ -0,0 +1,111 @@
 +import { showDebugText } from "#app/debug/ui-message";
 +import { globalScene } from "#app/global-scene";
 +import { UiMode } from "#enums/ui-mode";
++import { TextStyle } from "#enums/text-style";
 +import { getPlayerCandyJarCount, setPlayerCandyJarCount } from "#modifiers/modifier";
 +import type { OptionSelectItem } from "#types/ui-types";
-+import { Setting, getSandboxSetting, saveSandboxSetting } from "./sandbox-settings";
++import { Setting, SettingKeys, getSandboxSetting, saveSandboxSetting } from "./sandbox-settings";
++
++type MenuPosition = { cursor: number; scroll: number };
++type MenuMemory = { root: MenuPosition; categories: Map<string, MenuPosition> };
++// Keep title/run navigation independent, and release it when the UI is replaced.
++const memories = new WeakMap<object, Map<boolean, MenuMemory>>();
++const hasActiveRun = (): boolean => !!globalScene.currentBattle && globalScene.getPlayerParty().length > 0;
++const newRunSettings = new Set<string>([SettingKeys.Offline_Starting_Level, SettingKeys.Offline_All_Starters_Pokerus]);
++function settingHelp(row: Setting): string {
++  if (row.requireReload) return `${row.label}: restart required. Save and quit your run, change this from the title screen, then restart Debug mode.`;
++  if (newRunSettings.has(row.key)) return `${row.label}: applies to starters in new runs only. Your current team is unchanged.`;
++  return `${row.label}: changes apply to subsequent game actions.`;
++}
 +
 +/** Every menu here belongs to the separately compiled local Debug game. */
-+function options(items: OptionSelectItem[], initialCursor = 0, pageStep = 5): void {
++function options(items: OptionSelectItem[], initialCursor = 0, pageStep = 5, position?: MenuPosition, rememberCount = items.length): void {
 +  globalScene.ui.hideTooltip();
 +  void globalScene.ui.refreshOverlayMode(UiMode.OPTION_SELECT, {
 +    options: items, maxOptions: 7, initialCursor, pageStep,
 +    measureVisibleOptionsOnly: true,
++    initialScrollCursor: position?.scroll,
++    onCursorChange: position ? (cursor: number, scroll: number) => {
++      // Back/Cancel is navigation, not the next useful place to resume editing.
++      if (cursor < rememberCount) { position.cursor = cursor; position.scroll = scroll; }
++    } : undefined,
 +  });
 +}
 +
@@ -498,20 +518,28 @@ index 0000000000000000000000000000000000000000..4c8479129e344addab8f8039e0e64946
 +function chooseSetting(row: Setting, back: () => void): void {
 +  const current = row.directValue && globalScene.currentBattle ? getPlayerCandyJarCount() : getSandboxSetting(row.key);
 +  const apply = (value: number): boolean => {
++    if (row.requireReload && hasActiveRun()) return false;
 +    if (!saveSandboxSetting(row.key, value)) return false;
 +    if (row.directValue && globalScene.currentBattle) setPlayerCandyJarCount(value);
 +    back();
++    if (row.requireReload) showDebugText(`${row.label} saved. Restart Debug mode before starting a run.`, 0);
 +    return true;
 +  };
 +  const items: OptionSelectItem[] = row.directValue
 +    ? Array.from({length: 10000}, (_, value) => ({label: value.toLocaleString(), handler: () => apply(value)}))
 +    : row.options.map((option, value) => ({label: option.label, handler: () => apply(value)}));
 +  items.push({label: "Cancel", handler: () => (back(), true)});
-+  showDebugText(row.label, 0);
++  showDebugText(settingHelp(row), 0);
 +  options(items, row.directValue ? Math.min(current,9999) : current, row.directValue ? 10 : 5);
 +}
 +
 +export function showSandboxMenu(): void {
++  let contexts = memories.get(globalScene.ui);
++  if (!contexts) { contexts = new Map(); memories.set(globalScene.ui, contexts); }
++  const context = hasActiveRun();
++  let memory = contexts.get(context);
++  if (!memory) { memory = { root: { cursor: 0, scroll: 0 }, categories: new Map() }; contexts.set(context, memory); }
++  const state = memory;
 +  const groups = new Map<string, Setting[]>();
 +  let current = "Presentation";
 +  for (const row of Setting) {
@@ -521,7 +549,9 @@ index 0000000000000000000000000000000000000000..4c8479129e344addab8f8039e0e64946
 +  }
 +  const root = (): void => {
 +    showDebugText("Debug Tools\nLocal saves only.", 0);
-+    const items: OptionSelectItem[] = [...groups.keys()].map(name => ({label:name, handler: () => (category(name), true)}));
++    const items: OptionSelectItem[] = [...groups.keys()].map((name, index) => ({label:name, handler: () => {
++      state.root.cursor = index; category(name); return true;
++    }}));
 +    items.push({label:"Clear local Debug data",handler:()=>{
 +      showDebugText("Erase this device's Debug saves, builds and settings? Online and Offline profiles are kept.",0);
 +      void globalScene.ui.setOverlayMode(UiMode.CONFIRM,{
@@ -531,17 +561,28 @@ index 0000000000000000000000000000000000000000..4c8479129e344addab8f8039e0e64946
 +      });return true;
 +    }});
 +    items.push({label:"Back", handler: () => (globalScene.ui.revertMode(), true)});
-+    options(items);
++    options(items, state.root.cursor, 5, state.root, groups.size);
 +  };
-+  const category = (name: string, cursor = 0): void => {
++  const category = (name: string): void => {
 +    const rows = groups.get(name)!;
++    let position = state.categories.get(name);
++    if (!position) { position = { cursor: 0, scroll: 0 }; state.categories.set(name, position); }
++    const savedPosition = position;
 +    const items: OptionSelectItem[] = rows.map((row, index) => ({
-+      label: `${row.label}: ${valueLabel(row)}`,
-+      handler: () => (chooseSetting(row, () => category(name, index)), true),
++      label: `${row.label}: ${valueLabel(row)}${row.requireReload ? " (restart required)" : newRunSettings.has(row.key) ? " (new run)" : ""}`,
++      selectable: !row.requireReload || !hasActiveRun(),
++      color: row.requireReload && hasActiveRun() ? TextStyle.SUMMARY_GRAY : TextStyle.WINDOW,
++      onHover: () => showDebugText(settingHelp(row), 0),
++      handler: () => {
++        if (row.requireReload && hasActiveRun()) return false;
++        savedPosition.cursor = index;
++        chooseSetting(row, () => category(name)); return true;
++      },
 +    }));
 +    items.push({label:"Back", handler: () => (root(), true)});
-+    showDebugText("", 0);
-+    options(items, cursor);
++    showDebugText(hasActiveRun() && rows.some(row => row.requireReload)
++      ? "Restart-required settings are disabled during a run. Change them from the title screen and restart Debug mode." : "", 0);
++    options(items, savedPosition.cursor, 5, savedPosition, rows.length);
 +  };
 +  root();
 +}
@@ -8343,7 +8384,7 @@ index 32315c9cb191f7521d6661a0452f75b0a7cfbe6d..e9c5977ccd19ec6c36fbd31059fdd930
              globalScene.ui.setMode(UiMode.COMMAND, commandPhase.getFieldIndex());
              globalScene.ui.setMode(UiMode.MESSAGE);
 diff --git a/src/ui/handlers/base-option-select-ui-handler.ts b/src/ui/handlers/base-option-select-ui-handler.ts
-index 4b68b6bfe51452c8de34214e00c1ee239dd56bc8..48cb9ad5c4c02bd075a673c52d461bba9819d050 100644
+index 4b68b6bfe51452c8de34214e00c1ee239dd56bc8..65c24245fd594efd6f47c112a8adca2b9400034b 100644
 --- a/src/ui/handlers/base-option-select-ui-handler.ts
 +++ b/src/ui/handlers/base-option-select-ui-handler.ts
 @@ -105,6 +105,8 @@ export abstract class BaseOptionSelectUiHandler<T extends OptionSelectItem> exte
@@ -8359,7 +8400,7 @@ index 4b68b6bfe51452c8de34214e00c1ee239dd56bc8..48cb9ad5c4c02bd075a673c52d461bba
      this.optionSelectContainer.setVisible(true);
      this.scrollCursor = 0;
      this.initCursor();
-+    if (config.initialCursor !== undefined) this.selectFullCursor(config.initialCursor);
++    this.restoreMenuPosition(config);
  
      if (this.config?.inputDelay) {
        this.blockInput = true;
@@ -8384,10 +8425,28 @@ index 4b68b6bfe51452c8de34214e00c1ee239dd56bc8..48cb9ad5c4c02bd075a673c52d461bba
            this.clear();
          }
          playSound = !option.noSoundEffects && !!option.selectable;
-@@ -428,7 +433,25 @@ export abstract class BaseOptionSelectUiHandler<T extends OptionSelectItem> exte
+@@ -428,7 +433,43 @@ export abstract class BaseOptionSelectUiHandler<T extends OptionSelectItem> exte
      return success;
    }
  
++  private restoreMenuPosition(config: OptionSelectModeConfig<T>): void {
++    if (config.initialScrollCursor !== undefined) {
++      this.setScrollCursor(Math.max(0, Math.min(this.options.length - this.maxOptions,
++        Math.floor(config.initialScrollCursor) || 0)));
++    }
++    if (config.initialCursor === undefined) return;
++    let index = Math.max(0, Math.min(this.options.length - 1, Math.floor(config.initialCursor) || 0));
++    while (!this.options[index].selectable && index < this.options.length - 1) index++;
++    while (!this.options[index].selectable && index > 0) index--;
++    this.selectFullCursor(index);
++    // Restoration may cross a disabled row; it must not repeat the next input.
++    this.repeatInput = false;
++  }
++
++  private notifyMenuPosition(): void {
++    if (this.currentOption?.selectable) this.config?.onCursorChange?.(this.scrollCursor + this.cursor, this.scrollCursor);
++  }
++
 +  private selectFullCursor(index: number): boolean {
 +    index = Math.max(0, Math.min(this.options.length - 1, Math.floor(index)));
 +    const scroll = Math.max(0, Math.min(this.options.length - this.maxOptions,
@@ -8410,6 +8469,24 @@ index 4b68b6bfe51452c8de34214e00c1ee239dd56bc8..48cb9ad5c4c02bd075a673c52d461bba
      if (button === Button.UP) {
        if (this.cursor > 0) {
          return this.setCursor(this.cursor - 1);
+@@ -516,6 +557,8 @@ export abstract class BaseOptionSelectUiHandler<T extends OptionSelectItem> exte
+ 
+     this.currentOption?.onHover?.();
+ 
++    this.notifyMenuPosition();
++
+     return changed;
+   }
+ 
+@@ -538,6 +581,8 @@ export abstract class BaseOptionSelectUiHandler<T extends OptionSelectItem> exte
+ 
+     this.currentOption?.onHover?.();
+ 
++    this.notifyMenuPosition();
++
+     return true;
+   }
+ 
 diff --git a/src/ui/handlers/daily-seed-keyboard-ui-handler.ts b/src/ui/handlers/daily-seed-keyboard-ui-handler.ts
 new file mode 100644
 index 0000000000000000000000000000000000000000..751fa9214d3adf4ea0d73b03395caef72275e926
@@ -10154,10 +10231,10 @@ index 102e28a6d286954a788976aa9a4db3370085a53e..939de80ee69c5e45e4808c7cf5c0f854
      case GameModes.ENDLESS:
 diff --git a/test/system/pokemon-editor.test.ts b/test/system/pokemon-editor.test.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..b58e70796d7cd52de5da2f9f3c41c1056d215628
+index 0000000000000000000000000000000000000000..1269a7141fe30e06579726f453b545cc29641438
 --- /dev/null
 +++ b/test/system/pokemon-editor.test.ts
-@@ -0,0 +1,391 @@
+@@ -0,0 +1,461 @@
 +import { activeOverrides } from "#app/overrides";
 +import { Gender } from "#data/gender";
 +import { AbilityId } from "#enums/ability-id";
@@ -10196,6 +10273,8 @@ index 0000000000000000000000000000000000000000..b58e70796d7cd52de5da2f9f3c41c105
 +import {globalScene,initGlobalScene} from "#app/global-scene";
 +import { MessageUiHandler } from "#ui/message-ui-handler";
 +import { UiMode } from "#enums/ui-mode";
++import { TextStyle } from "#enums/text-style";
++import { showSandboxMenu } from "#app/debug/sandbox-menu";
 +
 +const caterpieDraft = (): PokemonEditorDraft => ({
 +  speciesId: SpeciesId.CATERPIE,
@@ -10529,6 +10608,20 @@ index 0000000000000000000000000000000000000000..b58e70796d7cd52de5da2f9f3c41c105
 +    ui.playSelect.mockClear();h.processInput(Button.RIGHT);
 +    expect(ui.playSelect).not.toHaveBeenCalled();
 +  });
++  it("restores the exact selected row and scroll offset, skips disabled rows and reports navigation",()=>{
++    const h=menu(),changed=vi.fn();h.config.onCursorChange=changed;
++    h.restoreMenuPosition({initialCursor:16,initialScrollCursor:13});
++    expect(h.scrollCursor).toBe(13);expect(h.cursor).toBe(3);
++    expect(changed).toHaveBeenLastCalledWith(16,13);
++    h.processInput(Button.DOWN);expect(changed).toHaveBeenLastCalledWith(17,13);
++    h.options[0].selectable=false;h.options[1].selectable=false;
++    h.restoreMenuPosition({initialCursor:0,initialScrollCursor:999});
++    expect(h.scrollCursor+h.cursor).toBe(2);expect(h.currentOption.selectable).toBe(true);
++    h.cursor=0;h.scrollCursor=10;
++    h.clearCursor=vi.fn();
++    h.restoreMenuPosition({initialCursor:2,initialScrollCursor:0});
++    expect(h.scrollCursor+h.cursor).toBe(2);expect(h.repeatInput).toBe(false);
++  });
 +  it("resolves duplicate starter edits to the selected copy, or a new grid draft",()=>{
 +    const h=Object.create(StarterSelectUiHandler.prototype) as any;
 +    Object.assign(h,{partyStarterIds:[SpeciesId.CATERPIE,SpeciesId.CATERPIE],partyIconsCursorIndex:1,partyCursorObj:{visible:true}});
@@ -10547,6 +10640,60 @@ index 0000000000000000000000000000000000000000..b58e70796d7cd52de5da2f9f3c41c105
 +    h.updateSelectedStarterMoveset(SpeciesId.CATERPIE);
 +    expect(custom.moveset).toEqual([MoveId.FLAMETHROWER]);expect(first.moveset).toEqual([MoveId.TACKLE]);
 +    expect(second.moveset).toEqual([MoveId.STRING_SHOT]);expect(second.moveset).not.toBe(h.starterMoveset);
++  });
++});
++
++describe("Debug Tools navigation and setting timing",()=>{
++  function fixture(inRun=false){
++    let config:any;
++    const message={showText:vi.fn()};
++    const ui={mode:UiMode.MENU,modeChain:[],handlers:[],hideTooltip:vi.fn(),
++      getMessageHandler:()=>message,refreshOverlayMode:vi.fn((_mode,c)=>{config=c;return Promise.resolve();}),
++      revertMode:vi.fn(()=>Promise.resolve(true))};
++    const scene={ui,currentBattle:inRun?{}:null,getPlayerParty:()=>inRun?[{}]:[]};
++    return {ui,scene,message,get config(){return config;}};
++  }
++  for(const inRun of [false,true])it(`remembers category, row and scroll across Back/Cancel/reopen (${inRun?"run":"title"})`,()=>{
++    const f=fixture(inRun),previous=globalScene;initGlobalScene(f.scene as any);
++    try{
++      showSandboxMenu();const group=f.config.options.findIndex(o=>o.label==="BATTLE");
++      f.config.onCursorChange(group,1);f.config.options[group].handler();
++      const selected=7;f.config.onCursorChange(selected,3);f.config.options[selected].handler();
++      // Cancel the value picker, retaining the exact category viewport.
++      f.config.options.at(-1).handler();
++      expect(f.config.initialCursor).toBe(selected);expect(f.config.initialScrollCursor).toBe(3);
++      // Apply a value too: both paths return to the same row.
++      f.config.options[selected].handler();f.config.options[0].handler();
++      expect(f.config.initialCursor).toBe(selected);expect(f.config.initialScrollCursor).toBe(3);
++      f.config.options.at(-1).handler();
++      expect(f.config.initialCursor).toBe(group);expect(f.config.initialScrollCursor).toBe(1);
++      f.config.options.at(-1).handler();showSandboxMenu();
++      expect(f.config.initialCursor).toBe(group);expect(f.config.initialScrollCursor).toBe(1);
++      f.config.options[group].handler();expect(f.config.initialCursor).toBe(selected);
++    }finally{initGlobalScene(previous);}
++  });
++  it("marks and disables restart-only settings during a run while explaining new-run effects",()=>{
++    const f=fixture(true),previous=globalScene;initGlobalScene(f.scene as any);
++    try{
++      showSandboxMenu();f.config.options.find(o=>o.label==="TEAM").handler();
++      const restart=f.config.options.filter(o=>o.label.includes("restart required"));
++      expect(restart).toHaveLength(2);
++      for(const row of restart){expect(row.selectable).toBe(false);expect(row.color).toBe(TextStyle.SUMMARY_GRAY);expect(row.handler()).toBe(false);}
++      const starting=f.config.options.find(o=>o.label.startsWith("Starting Level"));
++      expect(starting.label).toContain("new run");expect(starting.selectable).toBe(true);
++      starting.onHover();expect(f.message.showText.mock.lastCall?.[0]).toContain("current team is unchanged");
++    }finally{initGlobalScene(previous);}
++  });
++  it("permits restart settings at the title and shows the reminder after saving",()=>{
++    const f=fixture(),previous=globalScene;initGlobalScene(f.scene as any);
++    try{
++      showSandboxMenu();f.config.options.find(o=>o.label==="TEAM").handler();
++      const row=f.config.options.find(o=>o.label.startsWith("60 Starter Points"));
++      expect(row.selectable).toBe(true);row.handler();
++      f.config.options[f.config.initialCursor].handler();
++      expect(f.message.showText.mock.lastCall?.[0]).toContain("Restart Debug mode before starting a run");
++      expect(f.config.options.some(o=>o.label.startsWith("60 Starter Points"))).toBe(true);
++    }finally{initGlobalScene(previous);}
 +  });
 +});
 diff --git a/test/tests/system/daily-run/boss-rush.test.ts b/test/tests/system/daily-run/boss-rush.test.ts
