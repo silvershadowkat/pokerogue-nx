@@ -14,7 +14,8 @@ sdk = Path(os.environ.get('ANDROID_HOME',str(Path.home()/'AppData/Local/Android/
 if not os.environ.get('JAVA_HOME'): raise SystemExit('Set JAVA_HOME to your JDK 21 installation.')
 java = Path(os.environ['JAVA_HOME'])
 tools = sdk/'build-tools/36.0.0'
-build = root/'build-android/apk'
+native_build = Path(os.environ.get('PKR_ANDROID_BUILD_DIR', str(root/'build-android'))).resolve()
+build = native_build/'apk'
 build.mkdir(parents=True,exist_ok=True)
 version = ET.parse(root/'android/AndroidManifest.xml').getroot().attrib['{http://schemas.android.com/apk/res/android}versionName'].removesuffix('-native-test')
 signing=Path(os.environ.get('PKR_SIGNING_DIR',str(Path.home()/'Documents/Codex/Secrets/PokeRogue')))
@@ -71,12 +72,12 @@ run('dex',[java/'bin/java.exe','-Xmx512m','-cp',tools/'lib/d8.jar','com.android.
 shutil.copyfile(build/'base.apk',build/'unsigned.apk')
 with zipfile.ZipFile(build/'unsigned.apk','a',compression=zipfile.ZIP_DEFLATED) as z:
     z.write(build/'classes.dex','classes.dex')
-    z.write(root/'build-android/runtime/libmain.so','lib/arm64-v8a/libmain.so')
-    z.write(root/'build-android/runtime/third_party/SDL/libSDL2.so','lib/arm64-v8a/libSDL2.so')
+    z.write(native_build/'runtime/libmain.so','lib/arm64-v8a/libmain.so')
+    z.write(native_build/'runtime/third_party/SDL/libSDL2.so','lib/arm64-v8a/libSDL2.so')
     for path in (root/'js').glob('*.js'):
         if path.name!='debug.js':z.write(path,'assets/runtime/js/'+path.name)
     z.write(root/'third_party/cacert.pem','assets/cacert.pem')
-    z.writestr('assets/config.txt','audio=1\nlog=1\nosk=1\ndirecttouch=1\ntouchpad=1\n')
+    z.writestr('assets/config.txt','audio=1\nlog=1\nosk=1\ndirecttouch=0\ntouchpad=1\n')
 run('align',[tools/'zipalign.exe','-f','-p','4',build/'unsigned.apk',build/'aligned.apk'])
 env['PKR_SIGNING_PASSWORD']=password_file.read_text(encoding='utf8').strip()
 suffix=('-test-signed' if args.test_signing else '')+('-staging' if args.test_staging else '')

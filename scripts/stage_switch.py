@@ -24,7 +24,7 @@ shutil.copy2(args.nro, nro)
 config = target / 'config.txt'
 # A staging directory may be reused; never overwrite a user's settings or saves.
 if not config.exists():
-    config.write_text('audio=1\nlog=1\nosk=1\ndirecttouch=1\ntouchpad=1\n', encoding='utf8')
+    config.write_text('audio=1\nlog=1\nosk=1\ndirecttouch=0\ntouchpad=1\n', encoding='utf8')
 (args.output / 'READ-ME.txt').write_text(f'''PokeRogue {version} - Switch candidate
 Copy the switch folder to the SD root. Do not delete existing saves.
 Use full application mode (hold R while launching a game to enter hbmenu).
@@ -37,7 +37,8 @@ Debug loads a separate SilverShadow overlay and its exact stock base archive.
 Its update channel is not published yet. See docs/debug-mode.md for local setup.
 No legacy controllers, minigames or Google Drive integration are included.
 
-Tap menus and Touch pad can be enabled independently. Controllers always work.
+Touch pad Always/Fade uses only the pad; Off enables direct taps on game menus.
+Physical controllers always work. Legacy directtouch preferences are migrated.
 Close and reopen to return to mode selection. Each mode has separate storage.
 Do not copy old offline/debug saves into the online profile.
 

@@ -18,7 +18,7 @@ Switch: put `pokerogue-nx.nro` and `config.txt` in `sdmc:/switch/pokerogue-nx/`,
 
 The selector uses the official plains background, logo, window, cursor and Emerald font, downloaded and cached on first use. Mode-specific saves, cookies and caches live in separate profiles. Close and reopen the app to choose another mode; the JavaScript runtime is never reused across modes.
 
-Direct menu taps, optional on-screen controls and physical controllers can be used together. Fresh installs default to Touch pad Fade; existing preferences are preserved. Online game Settings remain stock. The optional pad restores our [SilverShadow chevron controller](docs/nx-touch-controls.md), including continuous thumb sliding, neutral capture and diagonal visual leaning. Its original state/pose helpers and vector paths are retained with differential tests; rendering uses cached GPU layers. Some direct-touch screens still require broader device testing; the pad is available as an alternative.
+In the 0.3.0-beta.2 candidate, Touch pad Always/Fade exclusively uses the pad; Off enables direct taps on game menus and moves. Physical controllers work in all three settings. The older independent Tap menus toggle is removed. Online game Settings remain stock. The pad restores our [SilverShadow chevron controller](docs/nx-touch-controls.md), including continuous thumb sliding, neutral capture and diagonal visual leaning. Its original state/pose helpers and vector paths are retained with differential tests; rendering uses cached GPU layers. Some direct-touch screens still require broader device testing.
 
 ## Updates
 

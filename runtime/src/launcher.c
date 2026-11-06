@@ -19,13 +19,12 @@
 #define PANEL_W 330
 #define ROW_H 45
 #define TOG_Y 438
-#define TOG_W 300
+#define TOG_W 450
 #define TOG_H 30
 
 enum { M_ONLINE, M_OFFLINE, M_DEBUG, M_UPDATE, M_BENCH, M_DEBUG_UPDATE };
 typedef struct { const char *label, *key; bool *value; } toggle;
 static const toggle toggles[] = {
-    {"Tap menus", "directtouch", &g_cfg.direct_touch},
     {"Touch pad", "touchpad", &g_cfg.touch_pad},
     {"30 fps limit", "fps30", &g_cfg.fps30},
 };
@@ -131,15 +130,15 @@ static void render(int sel,const int *modes,int n,bool offline_ok,const char *ve
     else if(current==M_DEBUG)snprintf(message,sizeof message,debug_ok?"SilverShadow cheats and editors - local saves only":"Download Debug patches - shared assets, local saves");
     else if(current==M_UPDATE)snprintf(message,sizeof message,"Version %s available - choose to download",update);
     else if(current==M_DEBUG_UPDATE)snprintf(message,sizeof message,"Debug %s available - choose to download",debug_update);
-    else snprintf(message,sizeof message,"Touch, physical controls, or both");
+    else snprintf(message,sizeof message,g_cfg.touch_pad?"Touch pad only - direct menu taps disabled":"Direct menu taps - physical controls also work");
     centered(TOG_Y-51,message,24,false);
     for(int i=0;i<N_TOGGLES;i++){
         const char *value=*toggles[i].value?"On":"Off";
-        if(i==1&&g_cfg.touch_pad)value=g_cfg.touch_pad_always?"Always":"Fade";
+        if(i==0&&g_cfg.touch_pad)value=g_cfg.touch_pad_always?"Always":"Fade";
         char label[80];snprintf(label,sizeof label,"%s: %s",toggles[i].label,value);
         text(52+i*TOG_W,TOG_Y,label,24,false,sel==n+i);
     }
-    centered(TOG_Y+35,"PokeRogue 0.3.0-beta.1",18,true);
+    centered(TOG_Y+35,"PokeRogue 0.3.0-beta.2",18,true);
     plutovg_canvas_destroy(canvas);canvas=NULL;plutovg_surface_destroy(surface);
     plutovg_convert_argb_to_rgba(image,image,W,H,W*4);
 }
@@ -204,7 +203,7 @@ int launcher_run(bool offline_ok,const char *version,bool debug_ok,const char *d
         }
         if(pick>=n){
             int i=pick-n;
-            if(i==1){int next=g_cfg.touch_pad?(g_cfg.touch_pad_always?0:2):1;g_cfg.touch_pad=next!=0;g_cfg.touch_pad_always=next==2;config_set("touchpad",next==2?"2":next==1?"1":"0");}
+            if(i==0){int next=g_cfg.touch_pad?(g_cfg.touch_pad_always?0:2):1;g_cfg.touch_pad=next!=0;g_cfg.touch_pad_always=next==2;g_cfg.direct_touch=!g_cfg.touch_pad;config_set("touchpad",next==2?"2":next==1?"1":"0");config_set("directtouch",g_cfg.direct_touch?"1":"0");}
             else{*toggles[i].value=!*toggles[i].value;config_set(toggles[i].key,*toggles[i].value?"1":"0");}
             dirty=true;
         }

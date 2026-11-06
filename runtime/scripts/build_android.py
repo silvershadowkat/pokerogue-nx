@@ -7,7 +7,7 @@ sdk = Path(os.environ.get('ANDROID_HOME', str(Path.home() / 'AppData/Local/Andro
 ndk = sdk / 'ndk/29.0.14206865'
 cmake = 'cmake'
 ninja = sdk / 'cmake/3.22.1/bin/ninja.exe'
-build = root / 'build-android'
+build = Path(os.environ.get('PKR_ANDROID_BUILD_DIR', str(root / 'build-android'))).resolve()
 build.mkdir(exist_ok=True)
 deps = build / 'deps'
 common = ['-G','Ninja', f'-DCMAKE_MAKE_PROGRAM={ninja.as_posix()}',

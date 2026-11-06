@@ -44,11 +44,13 @@ void touch_overlay_active(bool enabled) {
     active = enabled;
 }
 bool touch_overlay_event(const plat_event *ev) {
-    if (!active || ev->type < PEV_POINTER_DOWN || ev->type > PEV_POINTER_UP)
+    if (ev->type < PEV_POINTER_DOWN || ev->type > PEV_POINTER_UP)
         return false;
+    if (!active)
+        return g_cfg.touch_pad;
     int w, h;
     plat_drawable_size(&w, &h);
-    tc_configure(&g_touch_controls, w, h, g_cfg.direct_touch, g_cfg.touch_pad);
+    tc_configure(&g_touch_controls, w, h, !g_cfg.touch_pad, g_cfg.touch_pad);
     int kind = ev->type == PEV_POINTER_DOWN ? TC_DOWN
                : ev->type == PEV_POINTER_UP ? TC_UP
                                             : TC_MOVE;
@@ -67,7 +69,7 @@ bool touch_overlay_event(const plat_event *ev) {
     }
     bool consumed =
         tc_pointer(&g_touch_controls, kind, ev->pointer_id, ev->x, ev->y);
-    // First touch wakes a faded pad without stealing direct menu gestures.
+    // A faded pad still owns touch input; its first touch only wakes/uses it.
     if (kind == TC_DOWN) {
         fade = fade_from = fade_target = 1;
         last_release = host_now_ms();
@@ -147,7 +149,7 @@ void touch_overlay_draw(void) {
     plat_drawable_size(&w, &h);
     if (w <= 0 || h <= 0)
         return;
-    tc_configure(&g_touch_controls, w, h, g_cfg.direct_touch, g_cfg.touch_pad);
+    tc_configure(&g_touch_controls, w, h, !g_cfg.touch_pad, g_cfg.touch_pad);
     double now = host_now_ms();
     if (!last_release)
         last_release = now;

@@ -18,7 +18,7 @@ typedef struct {
     const char *data_dir;    // writable: HTTP cache, localStorage, cookies
     const char *app_dir;     // launcher/config/certificate root; profiles are children
     pkr_client_mode client_mode;
-    bool direct_touch;      // direct game-menu taps; physical controls remain enabled
+    bool direct_touch;      // legacy config value, derived as !touch_pad at startup
     bool touch_pad;         // optional native on-screen controller
     bool touch_pad_always;  // false: original two-second Fade; true: Always
     const char *control;     // optional FIFO path for test commands (see main.c)

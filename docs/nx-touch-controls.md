@@ -23,7 +23,15 @@ One pointer owns the complete D-pad, including a neutral-center touch. Sliding o
 
 A direction change releases the old key before pressing the new key. Unchanged movement adds no transition; repeats remain 250 ms. Action buttons keep their original pointer ownership while dragging outside; independent held counts prevent one finger from releasing another's button. Action hit slop remains 15%. Focus loss, scene changes, cancellation, disable and resize clear held input.
 
-The native pad emits the same logical keyboard/touch events as the original. It no longer merges into a physical gamepad, so changing controller bindings does not remap the touch controls. Physical control polling stays on its existing path. Direct taps outside captured control regions stay available.
+The native pad emits the same logical keyboard/touch events as the original. It no longer merges into a physical gamepad, so changing controller bindings does not remap the touch controls. Physical control polling stays on its existing path.
+
+From 0.3.0-beta.2, Touch pad Always/Fade consumes all game touch gestures,
+including contacts outside its buttons and while faded to zero opacity. Those
+gestures cannot select game menus, moves or Pokemon underneath it. Touch pad Off
+enables direct touch, including for older installations with directtouch=0. The
+separate Tap menus toggle is removed; changing the touchpad preference controls
+both policies. Native dialogs/keyboards handle their own touch first. Physical
+controllers work with every touchpad setting.
 
 ## Visuals and performance
 

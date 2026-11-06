@@ -177,12 +177,33 @@ int main(void) {
     touch_overlay_active(false);
     touch_overlay_active(true);
     draw();
-    assert(!pointer(PEV_POINTER_DOWN, 3, 600, 200));
+    assert(pointer(PEV_POINTER_DOWN, 3, 600, 200));
     now += 3000;
     draw();
     assert(touch_overlay_visible());
-    assert(!pointer(PEV_POINTER_UP, 3, 600, 200));
+    assert(pointer(PEV_POINTER_UP, 3, 600, 200));
     now += 2200;
+    draw();
+    now += 200;
+    draw();
+    assert(!touch_overlay_visible());
+    // Fade at zero opacity must still swallow menu/move taps outside the pad.
+    assert(pointer(PEV_POINTER_DOWN, 30, 600, 200));
+    assert(pointer(PEV_POINTER_MOVE, 30, 610, 205));
+    assert(pointer(PEV_POINTER_UP, 30, 610, 205));
+    assert(!g_touch_controls.buttons[0]);
+    g_cfg.touch_pad_always = true;
+    assert(pointer(PEV_POINTER_DOWN, 31, 600, 200));
+    assert(pointer(PEV_POINTER_UP, 31, 600, 200));
+    g_cfg.touch_pad_always = false;
+    // Off permits direct touch even if an old directtouch=0 setting remains.
+    g_cfg.touch_pad = false;
+    g_cfg.direct_touch = false;
+    assert(!pointer(PEV_POINTER_DOWN, 32, a.x+a.w/2, a.y+a.h/2));
+    assert(!pointer(PEV_POINTER_UP, 32, a.x+a.w/2, a.y+a.h/2));
+    assert(!g_touch_controls.buttons[0]);
+    g_cfg.touch_pad = true;
+    now += 2400;
     draw();
     now += 200;
     draw();
@@ -194,6 +215,8 @@ int main(void) {
     assert(g_touch_controls.buttons[15]);
     touch_overlay_active(false);
     assert(!g_touch_controls.buttons[15]);
+    assert(pointer(PEV_POINTER_DOWN, 33, 600, 200));
+    assert(pointer(PEV_POINTER_UP, 33, 600, 200));
     eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
     eglDestroyContext(display, ctx);
     eglDestroySurface(display, surface);
@@ -201,6 +224,6 @@ int main(void) {
     puts("PASS: native ES2 controller, uninterrupted circular slides at "
          "30/60/120 Hz, neutral-to-slide, ordered events, zero "
          "texture uploads during D-pad movement, action capture, fade/wake and "
-         "lifecycle release");
+         "lifecycle release, pad-only routing and Off-only direct touch");
     return 0;
 }

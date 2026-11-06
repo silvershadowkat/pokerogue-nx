@@ -1452,7 +1452,7 @@ JSContext *host_js_init(void) {
     JS_SetPropertyStr(ctx, native, "baseURL", JS_NewString(ctx, g_cfg.base_url));
     JS_SetPropertyStr(ctx, native, "clientMode", JS_NewString(ctx, client_mode_name(g_cfg.client_mode)));
     JS_SetPropertyStr(ctx, native, "allowSaveImport", JS_NewBool(ctx, client_can_import(g_cfg.client_mode)));
-    JS_SetPropertyStr(ctx, native, "directTouch", JS_NewBool(ctx, g_cfg.direct_touch));
+    JS_SetPropertyStr(ctx, native, "directTouch", JS_NewBool(ctx, !g_cfg.touch_pad));
 #ifdef __SWITCH__
     JS_SetPropertyStr(ctx, native, "storageBackupRecovery", JS_TRUE);
 #endif

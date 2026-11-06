@@ -6,8 +6,8 @@
   "localesCommit": "083912e2fd98c68f05160eac72ea857253a0c742",
   "stockRelease": "release-f045bef",
   "baseVersion": "f045bef",
-  "debugVersion": "ss-0.3.0-beta.1-f045bef",
-  "patchSha256": "85568e40a35c055418c8a000d13d60b3160cff5c10fb7d7c6bdd40b2c05b6f61",
+  "debugVersion": "ss-0.3.0-beta.2-f045bef",
+  "patchSha256": "6125c071c122c00f4cd541bbf45a0d8ea558c0698491f3800d92f73f2094dd9b",
   "patchedSourceSha256": {
     "src/@types/save-data.ts": "8d9f357360363ba5106a844aab314a8f6644644a485de74a8c218766ced2c46b",
     "src/@types/ui-types.ts": "6eef9786bb6ac0225ee0c9dc2bff3374813e7a486ea8fded38a8779748fb5f60",
@@ -65,7 +65,7 @@
     "src/system/pokemon-editor/pokemon-editor-ui.ts": "92c468a4cc4e439d81823f3328f39861185d42f511d6f1d1843358409d834eeb",
     "src/ui/containers/starter-summary.ts": "927136f17c08618f719692025b35794929e407e9e047969e91e0bd5f610b1ca3",
     "src/ui/handlers/ball-ui-handler.ts": "8431b977e94c3260c077678972db36ac383f37cb8048e529f11d2e745a12925d",
-    "src/ui/handlers/base-option-select-ui-handler.ts": "e00cab5b0e095969edff0b224bdb7b99bd8da8cba2662cb612e71caa89c520c2",
+    "src/ui/handlers/base-option-select-ui-handler.ts": "4f524baf88df32c1f07c1cce72e8edfaa999ab425f0cc2b60d736b7e507761b3",
     "src/ui/handlers/daily-seed-keyboard-ui-handler.ts": "99852a51d3d09bf056616e2936a89630c284c852e1fc2ee4b6daedd7f5c14e20",
     "src/ui/handlers/gacha-calendar-ui-handler.ts": "2829b15299399685a9e006280d6a6148ee7210dd2a69222ea062529a2ed25f9b",
     "src/ui/handlers/menu-ui-handler.ts": "f5310ef0cd7bc6ba86d74d32b4c25a70d428c794d9c0ee212ab765f55d2edda5",
@@ -79,7 +79,7 @@
     "src/ui/handlers/title-ui-handler.ts": "35990880fc14762561ac519ece411f1ac709881a0e986c13bb846c34c7fb9633",
     "src/ui/ui.ts": "899b4a1c78da73b18b94741f66b17249f07707f3db85a130aa82bcf1d0e4b472",
     "src/ui/utils/starter-select-ui-utils.ts": "2907a262d6e84730f492d1795ec95fb53c2a038156e5d8db87d64954d2a86a48",
-    "test/system/pokemon-editor.test.ts": "750df50ac248dc82326c0a957f67c9be910fee6eaef922cc39f51747aaa1583e",
+    "test/system/pokemon-editor.test.ts": "72a74a51f3e6c620d2fb6e1e019e2ed90443c40b7018ad9bd8f156df07cbaff4",
     "test/tests/system/daily-run/boss-rush.test.ts": "da965483c1ead8b2f61dac91305a4e45a9d6b85dd54aabeb2605f82bf0ae19e1",
     "test/tests/system/daily-run/daily-run-system.test.ts": "07a4c3e4a3d084656ebdcf2156ce1d809c8d5c374b9d0a2edc8a0966a0067524",
     "test/tests/system/daily-run/random-run.test.ts": "022326d92cb7d57b7f0085262f7a4b90289d8e58fe3c90223e36423509c8c0cd"

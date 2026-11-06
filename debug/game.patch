@@ -8343,7 +8343,7 @@ index 32315c9cb191f7521d6661a0452f75b0a7cfbe6d..e9c5977ccd19ec6c36fbd31059fdd930
              globalScene.ui.setMode(UiMode.COMMAND, commandPhase.getFieldIndex());
              globalScene.ui.setMode(UiMode.MESSAGE);
 diff --git a/src/ui/handlers/base-option-select-ui-handler.ts b/src/ui/handlers/base-option-select-ui-handler.ts
-index 4b68b6bfe51452c8de34214e00c1ee239dd56bc8..ba64cb36b4ba1b7cb4b175a00cd5d5281ae7e6e4 100644
+index 4b68b6bfe51452c8de34214e00c1ee239dd56bc8..48cb9ad5c4c02bd075a673c52d461bba9819d050 100644
 --- a/src/ui/handlers/base-option-select-ui-handler.ts
 +++ b/src/ui/handlers/base-option-select-ui-handler.ts
 @@ -105,6 +105,8 @@ export abstract class BaseOptionSelectUiHandler<T extends OptionSelectItem> exte
@@ -8384,7 +8384,7 @@ index 4b68b6bfe51452c8de34214e00c1ee239dd56bc8..ba64cb36b4ba1b7cb4b175a00cd5d528
            this.clear();
          }
          playSound = !option.noSoundEffects && !!option.selectable;
-@@ -428,7 +433,24 @@ export abstract class BaseOptionSelectUiHandler<T extends OptionSelectItem> exte
+@@ -428,7 +433,25 @@ export abstract class BaseOptionSelectUiHandler<T extends OptionSelectItem> exte
      return success;
    }
  
@@ -8392,8 +8392,9 @@ index 4b68b6bfe51452c8de34214e00c1ee239dd56bc8..ba64cb36b4ba1b7cb4b175a00cd5d528
 +    index = Math.max(0, Math.min(this.options.length - 1, Math.floor(index)));
 +    const scroll = Math.max(0, Math.min(this.options.length - this.maxOptions,
 +      index < this.scrollCursor ? index : index >= this.scrollCursor + this.maxOptions ? index - this.maxOptions + 1 : this.scrollCursor));
-+    this.setScrollCursor(scroll);
-+    return this.setCursor(index - scroll);
++    const scrolled = this.setScrollCursor(scroll);
++    const moved = this.setCursor(index - scroll);
++    return scrolled || moved;
 +  }
 +
    private handleCursorUpDown(button: Button): boolean {
@@ -10153,10 +10154,10 @@ index 102e28a6d286954a788976aa9a4db3370085a53e..939de80ee69c5e45e4808c7cf5c0f854
      case GameModes.ENDLESS:
 diff --git a/test/system/pokemon-editor.test.ts b/test/system/pokemon-editor.test.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..c30d98247ad06372a0b22ebb6bd9e6cea818f095
+index 0000000000000000000000000000000000000000..b58e70796d7cd52de5da2f9f3c41c1056d215628
 --- /dev/null
 +++ b/test/system/pokemon-editor.test.ts
-@@ -0,0 +1,379 @@
+@@ -0,0 +1,391 @@
 +import { activeOverrides } from "#app/overrides";
 +import { Gender } from "#data/gender";
 +import { AbilityId } from "#enums/ability-id";
@@ -10515,6 +10516,18 @@ index 0000000000000000000000000000000000000000..c30d98247ad06372a0b22ebb6bd9e6ce
 +    h.processInput(Button.UP);expect(h.scrollCursor+h.cursor).toBe(0);
 +    for(let i=0;i<8;i++)h.processInput(Button.RIGHT);
 +    expect(h.scrollCursor+h.cursor).toBe(31);
++  });
++  it("plays the selection sound when a page scrolls with its highlight pinned to one row",()=>{
++    const h=menu(),ui={playSelect:vi.fn(),playError:vi.fn()};h.getUi=()=>ui;
++    h.processInput(Button.RIGHT);h.processInput(Button.RIGHT);
++    expect(h.cursor).toBe(6);expect(h.scrollCursor).toBe(4);
++    ui.playSelect.mockClear();
++    expect(h.processInput(Button.RIGHT)).toBe(true);
++    expect(h.cursor).toBe(6);expect(h.scrollCursor).toBe(9);
++    expect(ui.playSelect).toHaveBeenCalledTimes(1);
++    while(h.scrollCursor+h.cursor<31)h.processInput(Button.RIGHT);
++    ui.playSelect.mockClear();h.processInput(Button.RIGHT);
++    expect(ui.playSelect).not.toHaveBeenCalled();
 +  });
 +  it("resolves duplicate starter edits to the selected copy, or a new grid draft",()=>{
 +    const h=Object.create(StarterSelectUiHandler.prototype) as any;

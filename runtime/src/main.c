@@ -448,7 +448,7 @@ static void control_poll(JSContext *ctx, bool *quit) {
 
 const char *host_version_string(void) {
 #if defined(__SWITCH__) || defined(__ANDROID__)
-    return "PokeRogue 0.3.0-beta.1 | Vita runtime " PKR_VERSION " (" PKR_COMMIT ")";
+    return "PokeRogue 0.3.0-beta.2 | Vita runtime " PKR_VERSION " (" PKR_COMMIT ")";
 #else
     return "PokeRogue Native " PKR_VERSION PKR_FLAVOR " (" PKR_COMMIT ")";
 #endif
@@ -1183,6 +1183,9 @@ int main(int argc, char **argv) {
     g_cfg.force_online = false;
     g_cfg.control = NULL;
 #endif
+    // Touch pad Always/Fade own all game touch input. Off enables direct taps,
+    // including installations with an older independent directtouch setting.
+    g_cfg.direct_touch = !g_cfg.touch_pad;
     g_cfg.app_dir = g_cfg.data_dir;
     mkdirs(g_cfg.data_dir);
     char path[512], prev_log[512];
