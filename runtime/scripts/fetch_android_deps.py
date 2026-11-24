@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Fetch Android-only pins without modifying an existing dependency checkout."""
 from pathlib import Path
 import subprocess

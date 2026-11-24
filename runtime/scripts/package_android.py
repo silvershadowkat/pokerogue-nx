@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Package/sign the native client without game files or debug scripts.
 Outputs stay in build-android until staged with device-test evidence.
 """

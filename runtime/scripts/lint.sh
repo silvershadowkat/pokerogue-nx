@@ -16,7 +16,7 @@ done
 mapfile -t sh < <(git ls-files '*.sh')
 shellcheck -S warning "${sh[@]}" || fail "shellcheck warnings (see above)"
 # Every source file carries the license identifier (data files and images can't).
-for f in $(git ls-files runtime tools archive | grep -vE '\.(md|png|json|patch|xml|txt|pem)$|/VERSION$'); do
+for f in $(git ls-files runtime tools archive | grep -vE '\.(md|png|jpg|json|patch|xml|txt|pem)$|/VERSION$'); do
   head -3 "$f" | grep -q 'SPDX-License-Identifier: AGPL-3.0-only' || fail "no SPDX-License-Identifier in $f"
 done
 grep -qE '^[0-9]+\.[0-9]+(\.[0-9]+)?$' runtime/VERSION || fail "runtime/VERSION must look like 1.1 or 1.0.2"

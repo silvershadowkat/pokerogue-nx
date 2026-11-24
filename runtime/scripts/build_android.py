@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Build the native Android candidate with the locally installed NDK, at -j2."""
 from pathlib import Path
 import os, subprocess

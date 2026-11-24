@@ -1,4 +1,4 @@
-# Debug mode in 0.3.0-beta.1
+# Debug mode in 0.3.0-beta.4
 
 The app label is **PokeRogue**. Online, Offline and Debug share one native client,
 but have separate game instances, saves, cookies and caches. Mode selection
@@ -45,12 +45,11 @@ selector offers updates rather than applying them during a run. Current packs
 are about 1.6 MB; a different stock base still requires the full roughly 543 MB
 archive. Binary/per-asset delta downloads are not implemented.
 
-**This new update channel has not been published.** Until it is published, use
-the prepared local pack. On Switch put it at
-`sdmc:/switch/pokerogue-nx/debug-game.zip`, with the pinned stock archive under
-`games/f045bef.zip`. No extraction of either archive is needed. Android's
-candidate is staged directly on the maintainer's test device. Do not claim a
-public one-click Debug download until its channel is available.
+The public `debug-game` release supplies the compatible overlay. Select Debug to
+download it and, on first use, its matching stock base. Existing Debug saves stay
+in their own profile. Current base: `games/915fae1.zip`. No extraction is needed.
+The app offers future compatible Debug updates in the selector. If the channel
+cannot be reached, an installed compatible pack remains playable.
 
 See [source map and rebuild instructions](../debug/README.md),
 [testing](debug-testing.md) and [Android signing](android-signing.md).

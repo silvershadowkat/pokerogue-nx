@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package com.silvershadow.pokeroguenx;
 
 import android.app.Activity;

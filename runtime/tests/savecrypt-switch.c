@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 #define PKR_MBEDTLS 1
 #include "../src/savecrypt.c"
 #include <stdio.h>

@@ -34,7 +34,7 @@ No game files ship here. Connect Wi-Fi for the initial menu assets.
 Online loads the live official game; use your normal PokeRogue account.
 Offline downloads game.zip on demand and reads it without extracting it.
 Debug loads a separate SilverShadow overlay and its exact stock base archive.
-Its update channel is not published yet. See docs/debug-mode.md for local setup.
+Select Debug to download its compatible pack and exact stock base on first use.
 No legacy controllers, minigames or Google Drive integration are included.
 
 Touch pad Always/Fade uses only the pad; Off enables direct taps on game menus.

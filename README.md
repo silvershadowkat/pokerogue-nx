@@ -1,6 +1,6 @@
 # PokeRogue NX
 
-Nintendo Switch and Android adaptation of **[krappaU’s PokeRogue Vita](https://github.com/krappaU/pokerogue-vita)**. The 0.3.0-beta.1 development candidate adds isolated Debug to Online and Offline. **No game files are bundled in the APK/NRO.** The app reuses the maintainer's existing P/R/SS Poké Ball icon.
+Nintendo Switch and Android adaptation of **[krappaU’s PokeRogue Vita](https://github.com/krappaU/pokerogue-vita)**. Version 0.3.0-beta.4 offers isolated Online, Offline and Debug modes. **No game files are bundled in the APK/NRO.** The app reuses the maintainer's existing P/R/SS Poké Ball icon.
 
 krappaU’s native runtime, QuickJS integration, browser APIs, GPU rendering, audio and optimizations are this project's foundation. This is an adaptation of that work. Gameplay and assets belong to **[official PokeRogue and its contributors](https://github.com/pagefaultgames/pokerogue)**.
 
@@ -14,7 +14,7 @@ Switch: put `pokerogue-nx.nro` and `config.txt` in `sdmc:/switch/pokerogue-nx/`,
 
 - **Online:** loads live pokerogue.net, including its normal account login and server APIs. Android login, authenticated Daily Run and server-save refresh have been reported working by the maintainer. Switch/PC online save synchronization is confirmed in both directions; remaining Switch Daily/offline/stability checks are documented below. No cheats, developer evaluation channel, or save-file import.
 - **Offline:** downloads the normal offline distribution used by [Admiral-Billy’s app](https://github.com/Admiral-Billy/Pokerogue-App) when requested. Plays directly from one `game.zip`, without extracting tens of thousands of files. No account-server access or cheats.
-- **Debug:** unavailable in the public 0.2.0-rc7 release. The 0.3.0-beta.1 development candidate adds isolated SilverShadow cheats, Pokemon/move editors and custom seeded modes. No minigames, Google Drive or legacy controllers are imported. See [Debug status and update channel](docs/debug-mode.md).
+- **Debug:** optional isolated SilverShadow cheats, Pokemon/move editors and custom seeded modes. No minigames, Google Drive or legacy controllers are imported. See [Debug status and update channel](docs/debug-mode.md).
 
 The selector uses the official plains background, logo, window, cursor and Emerald font, downloaded and cached on first use. Mode-specific saves, cookies and caches live in separate profiles. Close and reopen the app to choose another mode; the JavaScript runtime is never reused across modes.
 
@@ -30,7 +30,7 @@ Offline checks for an update and offers it in the selector. Downloads can resume
 
 **Switch/PC cloud-save round trip confirmed:** the maintainer verified server refresh and continued the same run across both devices after the RC5 timestamp correction. RC7 adds startup loading feedback; Offline persistence, Switch Daily and broader stability checks remain pending. A return to the title screen alone does not prove upload success.
 
-0.2.0-rc7 is a public beta. The maintainer confirmed the RC7 startup loading change on Switch. The maintainer confirmed Android official-account login, authenticated Daily matching the website, server-data refresh and smooth RC4 touch-pad feel on Retroid. Switch/PC online save upload/reopen and automatic refresh are now maintainer-confirmed. Remaining hardware checks are listed in the testing evidence. See [testing evidence](docs/nx-testing.md) and the [release checklist](docs/nx-client-release.md).
+0.3.0-beta.4 updates the runtime to Vita 1.1.6 and the pinned Debug game to official 1.12.2.8. This update has automated desktop coverage; new Switch hardware coverage is pending. The following device observations are from earlier builds. The maintainer confirmed the RC7 startup loading change on Switch. The maintainer confirmed Android official-account login, authenticated Daily matching the website, server-data refresh and smooth RC4 touch-pad feel on Retroid. Switch/PC online save upload/reopen and automatic refresh are now maintainer-confirmed. Remaining hardware checks are listed in the testing evidence. See [testing evidence](docs/nx-testing.md) and the [release checklist](docs/nx-client-release.md).
 
 - [Build and copy-ready installation](docs/nx-build.md)
 - [Mode boundaries and roadmap](docs/nx-modes.md)
