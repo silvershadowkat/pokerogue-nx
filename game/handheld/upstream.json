@@ -2,7 +2,7 @@
   "officialRepository": "https://github.com/pagefaultgames/pokerogue",
   "officialCommit": "215a58aaf1e88c94dda8b50457ac16bd2fffcc9b",
   "runtimeRepository": "https://github.com/krappaU/pokerogue-vita",
-  "runtimeCommit": "d7765878e987101c9838006191ad997b9900cd92",
+  "runtimeCommit": "53bb7e9e27a56e1b2e5a00510e6fb57a4aba704c",
   "assetsCommit": "8250b23677d4918801fc6fc1e95b6dd1c30ef6c4",
   "localesCommit": "b24c6f3d1b3f4449440d0200487e614e69b5df3d",
   "releaseContent": "Fetched at runtime; officialCommit/assetsCommit/localesCommit describe the older source reference, not bundled release content."

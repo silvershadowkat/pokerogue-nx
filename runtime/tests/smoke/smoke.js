@@ -23,6 +23,7 @@ function eq(a, b, what) {
 }
 const nextFrame = () => new Promise((r) => requestAnimationFrame(r));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const N = globalThis.__native;
 async function within(ms, p, what) {
   let timer;
   const timeout = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error(what + " timed out")), ms); });
@@ -442,6 +443,86 @@ async function run() {
     if (p.during <= f.during * 2) return "plain " + p.during + " calls, rewritten " + f.during;
     if (f.outside >= p.outside) return "outside a choice, rewritten " + f.outside + " calls, plain " + p.outside;
   });
+  await check("gamefix: unused move animations dropped and loaded again, the rest kept", async () => {
+    const fixed = await import("./assets/anims-Pk7rTstC.js"); // a chunk: src/gamefix.c rewrites it
+    await fixed.initMoveAnim(1);
+    if (globalThis.__pkrMoveAnims !== fixed.moveAnims()) return "the game's map isn't reachable";
+    // the player's Pokemon knows 1; the enemy knows 2 and, transformed, 3
+    const s = {
+      getPlayerParty: () => [{ moveset: [{ moveId: 1 }] }],
+      getEnemyParty: () => [{ moveset: [{ moveId: 2 }], summonData: { moveset: [{ moveId: 3 }] }, getMoveset() { return this.summonData.moveset; } }],
+      getField: () => [],
+    };
+    __rt.moveAnimGcNow(s); // the first pass starts noting when animations are loaded
+    for (const id of [2, 3, 4, 5, 33, 39, 116, 165]) await fixed.initMoveAnim(id);
+    fixed.moveAnims().set(6, null); // still loading
+    const [none] = __rt.moveAnimGcNow(s); // loaded within the last minute: none dropped yet
+    eq(none, 0, "dropped while young");
+    const [dropped, kept] = __rt.moveAnimGcNow(s, 0);
+    eq([dropped, kept], [2, 8], "dropped, kept");
+    eq([...fixed.moveAnims().keys()].sort((a, b) => a - b), [1, 2, 3, 6, 33, 39, 116, 165], "kept");
+    eq(fixed.getAnim(4), 0, "a dropped animation is simply not there");
+    const before = fixed.loaded();
+    await fixed.initMoveAnim(4);
+    eq([fixed.loaded() - before, fixed.getAnim(4)], [1, 3], "loaded again before use");
+    fixed.moveAnims().delete(6);
+  });
+  await check("gamefix: the starter screen shows the latest species' sprite, whatever order loads finish in", async () => {
+    const fixed = await import("./assets/spritepick-Pk7rTstD.js"); // a chunk: src/gamefix.c rewrites it
+    const text = await (await fetch("./assets/spritepick-Pk7rTstD.js")).text();
+    const plain = new Function(text.replace(/export (function|class)/g, "$1") + "\nreturn { makeHandler };")();
+    const run = async (mod, order) => {
+      const shown = [];
+      const sprite = { play(k) { shown.push(k); return this; }, setPipelineData() { return this; }, setVisible() { return this; } };
+      const H = mod.makeHandler(), h = new H(sprite), done = {};
+      const species = (name) => ({ getSpriteKey: () => name, loadAssets: () => new Promise((res) => { done[name] = res; }) });
+      for (const name of ["giratina", "magnemite"]) h.updateSprite(species(name), false, 0, false, 0);
+      for (const name of order) { done[name](); await sleep(0); }
+      return shown.join(",");
+    };
+    eq(await run(plain, ["magnemite", "giratina"]), "magnemite,giratina", "as published, a late earlier load wins");
+    eq(await run(fixed, ["magnemite", "giratina"]), "magnemite", "rewritten, out of order");
+    // in order: the same sprite in the end (the earlier one is no longer flashed in between)
+    eq((await run(fixed, ["giratina", "magnemite"])).split(",").pop(), (await run(plain, ["giratina", "magnemite"])).split(",").pop(), "in order, the same");
+  });
+  await check("gamefix: starter screen tooltips are replaced, not added, and show the same", async () => {
+    const fixed = await import("./assets/tips-Pk7rTstA.js"); // a chunk: src/gamefix.c rewrites it
+    const text = await (await fetch("./assets/tips-Pk7rTstA.js")).text();
+    const plain = new Function(text.replace(/export (function|class)/g, "$1") + "\nreturn { make };")();
+    class Emitter {
+      constructor() { this.l = {}; }
+      on(e, fn) { (this.l[e] = this.l[e] || []).push(fn); return this; }
+      off(e) { delete this.l[e]; return this; }
+      emit(e) { for (const fn of this.l[e] || []) fn(); }
+      count(e) { return (this.l[e] || []).length; }
+      setVisible() { return this; }
+    }
+    const run = (mod) => {
+      // what is on screen: the last tooltip shown (each call replaces it), or none once hidden
+      const log = [];
+      let shown = "none";
+      const B = { ui: { showTooltip: (a, b) => { shown = a + " " + b; }, hideTooltip: () => { shown = "none"; } } };
+      const { StarterSummary, PokedexPageUiHandler } = mod.make(Emitter, B);
+      const s = new StarterSummary(), p = new PokedexPageUiHandler();
+      for (let i = 1; i <= 5; i++) {
+        s.setStarter({ candy: i, friendship: 10, ability: "ab" + i, passive: "pa" + i });
+        p.setSpecies({ candy: i });
+      }
+      s.setNoStarter();
+      s.setStarter({ candy: 9, friendship: 10, ability: "last", passive: "lastp" });
+      for (const o of [s.pokemonAbilityText, s.pokemonPassiveText, s.pokemonCandyContainer, p.pokemonCandyContainer]) {
+        o.emit("pointerover"); log.push(shown);
+        o.emit("pointerout"); log.push(shown);
+      }
+      const counts = [s.pokemonAbilityText, s.pokemonPassiveText, s.pokemonCandyContainer, p.pokemonCandyContainer]
+        .map((o) => o.count("pointerover") + "/" + o.count("pointerout")).join(" ");
+      return { counts, log: log.join(", ") };
+    };
+    const f = run(fixed), p = run(plain);
+    eq(f.log, p.log, "tooltips shown and hidden");
+    eq(f.counts, "1/1 1/1 1/1 1/1", "rewritten listeners");
+    if (p.counts === f.counts) return "not rewritten (plain: " + p.counts + ")";
+  });
   await check("gamefix: a destroyed time-of-day widget stops listening to encounters", async () => {
     const fixed = await import("./assets/widget-Pk7rTst6.js"); // a chunk: src/gamefix.c rewrites it
     const text = await (await fetch("./assets/widget-Pk7rTst6.js")).text();
@@ -551,6 +632,27 @@ async function run() {
     eq(saved["smoke-saved"], "on the card", file);
     localStorage.removeItem("smoke-saved");
   });
+  // The page runs twice on the same data folder (tests/run_page.sh): the first run leaves a damaged
+  // file and its backup, the second must have started from the backup.
+  let damage = null;
+  await check("storage: a write keeps the file it replaces; a damaged file is kept aside and the backup loaded", () => {
+    const N = globalThis.__native, file = N.baseURL && String(N.baseURL).startsWith("https://offline.invalid") ? "localStorage-offline.json" : "localStorage.json";
+    if (localStorage.getItem("smoke-bak") != null) { // the second run
+      eq(localStorage.getItem("smoke-bak"), "older", "loaded from the backup");
+      eq(N.readFile(file + ".bad"), "{damaged", "the damaged file is kept");
+      eq(JSON.parse(N.readFile(file))["smoke-bak"], "older", "the file is whole again");
+      return;
+    }
+    localStorage.setItem("smoke-bak", "older");
+    globalThis.__rt.flushStorage();
+    localStorage.setItem("smoke-bak", "newer");
+    globalThis.__rt.flushStorage();
+    eq(JSON.parse(N.readFile(file + ".bak"))["smoke-bak"], "older", "the replaced file is the backup");
+    eq(JSON.parse(N.readFile(file))["smoke-bak"], "newer", file);
+    if (!N.writeFile("smoke-move.txt", "x") || !N.renameFile("smoke-move.txt", file + ".bad") || N.readFile(file + ".bad") !== "x") return "renameFile";
+    if (N.renameFile("smoke-none.txt", file + ".bad") || N.readFile(file + ".bad") !== "x") return "renaming a missing file must leave the target";
+    damage = () => N.writeFile(file, "{damaged");
+  });
 
   // ------------------------------------------------------------ images and Canvas 2D
   let img;
@@ -574,6 +676,29 @@ async function run() {
     eq(Array.from(d.slice(16, 20)), [255, 255, 0, 255], "background");
     const b = Array.from(d.slice(8, 12)); // half-transparent blue over yellow
     if (Math.abs(b[0] - 127) > 3 || Math.abs(b[2] - 128) > 3 || b[3] !== 255) return "blended pixel " + b;
+  });
+  await check("image: one decoded copy when drawn; dropped when unused, decoded again when drawn", async () => {
+    const im = new Image();
+    const loaded = new Promise((res, rej) => { im.onload = res; im.onerror = () => rej(new Error("image error")); });
+    im.src = PNG_3x2;
+    await within(5000, loaded, "image load");
+    const draw = () => {
+      const c = document.createElement("canvas");
+      c.width = 4; c.height = 2;
+      const x = c.getContext("2d");
+      x.drawImage(im, 0, 0);
+      return Array.from(x.getImageData(0, 0, 2, 1).data);
+    };
+    const m0 = N.imageMemory();
+    eq(draw(), [255, 0, 0, 255, 0, 255, 0, 255], "drawn");
+    const m1 = N.imageMemory();
+    eq(m1[1] - m0[1], 0, "decoded bytes after drawing (the drawn copy replaces the decoded one)");
+    N.imageTrim(0);
+    const m2 = N.imageMemory();
+    if (!(m2[1] < m1[1] && m2[2] > m1[2])) return "not dropped: " + m1 + " -> " + m2;
+    eq(draw(), [255, 0, 0, 255, 0, 255, 0, 255], "drawn again");
+    const m3 = N.imageMemory();
+    if (!(m3[3] > m2[3])) return "not decoded again: " + m2 + " -> " + m3;
   });
   await check("canvas2d: a canvas without pixels (out of memory) draws nothing and doesn't throw", () => {
     // 40000 px wide: plutovg refuses it, as an allocation that failed (log225); the runtime collects
@@ -672,6 +797,27 @@ async function run() {
     await within(3000, new Promise((res) => { src.onended = res; }), "onended");
   });
 
+  await check("audio: a WAV over the kept budget is written out, dropped, and played from its file", async () => {
+    const ctx = new AudioContext();
+    const before = N.audioKept(0); // no budget: samples that aren't playing go
+    try {
+      const buf = await within(5000, ctx.decodeAudioData(makeWav()), "decode");
+      let k = before;
+      for (let i = 0; i < 50 && !(k[4] > before[4] && k[2] > before[2]); i++) await sleep(100), (k = N.audioKept());
+      if (!(k[4] > before[4])) return "not written out: " + k;
+      if (!(k[2] > before[2])) return "not dropped: " + k;
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(ctx.destination);
+      src.start();
+      await within(3000, new Promise((res) => { src.onended = res; }), "onended");
+      const after = N.audioKept();
+      if (!(after[3] > k[3])) return "not brought back: " + after;
+    } finally {
+      N.audioKept(10 * 1048576);
+    }
+  });
+
   // ------------------------------------------------------------ connection lost (last: it leaves its dialog open)
   await check(__native.clientMode === "online"
     ? "net: a save request without a connection waits behind the retry dialog"
@@ -704,6 +850,10 @@ async function run() {
     if (!/^rejected/.test(settled)) return "abort: " + settled;
   });
 
+  if (damage) { // last, so that no later save replaces it
+    globalThis.__rt.flushStorage();
+    damage();
+  }
   const failed = results.filter((r) => !r).length;
   console.log("[test] DONE passed=" + (results.length - failed) + " failed=" + failed);
 }

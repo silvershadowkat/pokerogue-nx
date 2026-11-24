@@ -138,7 +138,7 @@ static void render(int sel,const int *modes,int n,bool offline_ok,const char *ve
         char label[80];snprintf(label,sizeof label,"%s: %s",toggles[i].label,value);
         text(52+i*TOG_W,TOG_Y,label,24,false,sel==n+i);
     }
-    centered(TOG_Y+35,"PokeRogue 0.3.0-beta.3",18,true);
+    centered(TOG_Y+35,"PokeRogue 0.3.0-beta.4",18,true);
     plutovg_canvas_destroy(canvas);canvas=NULL;plutovg_surface_destroy(surface);
     plutovg_convert_argb_to_rgba(image,image,W,H,W*4);
 }
@@ -191,7 +191,7 @@ int launcher_run(bool offline_ok,const char *version,bool debug_ok,const char *d
         if(plat_gamepads(&pad,1)>0){
             bool now[18],dir[4]={pad.buttons[12]>.5f||pad.axes[1]<-.6f,pad.buttons[13]>.5f||pad.axes[1]>.6f,pad.buttons[14]>.5f||pad.axes[0]<-.6f,pad.buttons[15]>.5f||pad.axes[0]>.6f};
             bool any=false;for(int i=0;i<18;i++)now[i]=pad.buttons[i]>.5f,any|=now[i];for(int i=0;i<4;i++)any|=dir[i];
-            if(!armed)armed=!any;
+            if(!armed)armed=true; // First poll establishes held state; new presses work immediately.
             else{
                 if(dir[0]&&!prev_dir[0])sel=move(sel,n,-1,0),dirty=true;
                 if(dir[1]&&!prev_dir[1])sel=move(sel,n,1,0),dirty=true;

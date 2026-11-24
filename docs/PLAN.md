@@ -82,7 +82,7 @@ Docker image and is tested in Vita3K (does it boot?) and on the real Vita (perfo
    LiveArea assets.
 3. **Playable: done.** Sound, gamepad, touch, built-in keyboard login, online saves,
    offline mode with downloads and updates, save import/export. Released as betas
-   (v0.37-beta onward), then v0.93 and v1.0.
+   (v0.37-beta onward), then v0.93, v1.0 and v1.1.
 4. **Performance and polish: in progress.** See the findings log for what has been done (native
    container walk, sprite batching, uniforms and flushes; lazily built UI; translation cache;
    native save encryption; work moved off the main thread) and the open items below.
@@ -138,12 +138,24 @@ Performance:
      loaded keeps ~0.27 MB of JS (desktop) for the rest of the session (Phaser's atlas frames and
      animation); the starter screen loads one per species the cursor visits. Unloading the atlases
      and animations no object uses (and the atlas JSON copy nothing reads) would bound it. (1.0.17:
-     a failed allocation collects and retries, and one failing frame no longer stops the game.)
+     a failed allocation collects and retries, and one failing frame no longer stops the game.
+     1.0.19: unused Pokemon sprites unloaded at a new biome or run and under memory pressure,
+     js/sprite_gc.js; Vita numbers pending.)
+  10. The starter select screen (log225): idle 45-75 ms of JS a frame (drawing); a filter change ~0.7 s
+     (filterStarters works out every filter for each of ~600 starters; each visible slot remakes its
+     icon sprite). (1.0.18: the listeners that piled up with every cursor move, Phaser's and the
+     game's, no longer do. 1.0.22: slot icons kept, a filter change -36% on the desktop; the filter
+     itself, ~10 ms there, is many small checks per starter.)
   Network, not ours to fix: the save after each wave uploads 255-265 KB (game and session data);
   on busy Wi-Fi 17-74 s (5-31 KB/s). Smaller uploads would need the server to accept compression.
 
 Reliability and maintenance (from [review-2026-10.md](review-2026-10.md); findings 3, 4, 5 and 9
 done in 1.0.4: renderbuffer leak, disk cache cleaning, missing-compiler message, download check):
+- Done in 1.1.4 (code review, 2026-11-12): saves keep a backup and a damaged file is never written
+  over; compiled code and disk cache entries carry a checksum; game.zip is checked against the
+  release's SHA-256; config.txt survives a failed write; `build_vita.sh` fails when the build does.
+  Open from that review: a gamefix rule that stops matching is silent; `fetch_deps.sh` downloads
+  aren't hash-checked.
 - Unpinned build inputs: `vitasdk/vitasdk:latest` (finding 8; Vita3K is pinned since 2026-10-28,
   with a weekly scheduled check for newer builds).
 - Cg reserved-word renaming doesn't rename uniform/attribute lookups (finding 7; latent).
@@ -155,6 +167,15 @@ From the pokerogue-nx fork (Switch/Android, merged our 1.0.6; reviewed 2026-11-0
   fraction (net.c's offset), and PokeRogue's save API rejected the save; the offset is now whole ms.
 - Login and register screens without D-pad navigation (login still needs a tap or SELECT-and-cross
   after the password); the fork's runtime/js/modal-controls.js adds focus navigation. Not ported yet.
+
+Memory over long sessions (log256: 217 of 256 MB in use after 1 h 42 min):
+- Done in 1.1.5 (2026-11-18): unused parsed move animations dropped at new biomes (a gamefix rule
+  exposes the game's map), WAV sounds share the decoded-audio budget (written to the memory card
+  when first dropped), drawn images keep one decoded copy and unused ones are dropped. Desktop, 15
+  waves: JS 131 vs 139 MB, decoded audio 9.9 vs 26 MB. Not yet measured on the console.
+- Still kept: the move animations' textures ("PRAS-", ~3 MB for 86) and charge animations.
+- The extended test's bot stops at wave 178 of the wave-163 save (1.1.4 too): the party screen
+  takes no input after a Lum Berry reward; a stuck report now gives the handler's input flags.
 
 Features and checks:
 - Untested on the console: save import/export and the restart after an import (0.41), QR links (0.40).
@@ -168,4 +189,4 @@ Features and checks:
   Each user installs their own copy, for example with PIB-Configuration-Tool, ShaRKBR33D or ShaRKF00D.
 - Wi-Fi: the app loads the live game from pokerogue.net
 - Logs go to `ux0:data/pokerogue/log.txt` (dev builds; player builds only with `log=1` in
-  `ux0:data/pokerogue/config.txt`)
+  `ux0:data/pokerogue/config.txt`, which the start screen's "Write a log" toggle sets)

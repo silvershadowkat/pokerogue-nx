@@ -8,6 +8,7 @@
 // runner), which alternate native and Phaser code frame by frame and compare vertex data, uniform
 // calls, draw calls and texture binds. Logs "[test] PASS/FAIL" lines and "[test] DONE ...".
 import * as Phaser from "./phaser.js";
+import * as starterChunk from "./starter-Pk7rTstB.js"; // a chunk: src/gamefix.c rewrites it
 
 // The game's bundle assigns window.Phaser the same way; the runtime patches Phaser (pre-FX off,
 // fast paths) the moment it is assigned (js/bootstrap.js).
@@ -282,6 +283,37 @@ async function run() {
     b.destroy(), c.destroy(), d.destroy();
     report("fastpath: measuring makes no texture; a destroyed text's texture serves the same text", !detail, detail);
   }
+  // js/fastpath.js 4: a text changed back to what its texture shows (same words, colour, shadow) is
+  // not drawn again; one really changed is, and so is one measured meanwhile in another state (its
+  // sizes are that state's), whose size then matches Phaser's for its words.
+  {
+    const sc = game.scene.getScene("test");
+    const style = { fontFamily: "sans-serif", fontSize: "24px", color: "#ffffff" };
+    const t = sc.add.text(10, 160, "3", style).setShadow(2, 2, "#333333");
+    await nextFrames(game, 3);
+    const tex = t.frame.source.glTexture, size0 = t.width + "x" + t.height;
+    const draws = () => rt.textStats().draws;
+    let d0 = draws();
+    t.setText("3"); t.setColor("#ffffff"); t.setShadowColor("#333333");
+    await nextFrames(game, 2);
+    const sameDraws = draws() - d0, sameTex = t.frame.source.glTexture === tex;
+    d0 = draws();
+    t.setColor("#ffcc00");
+    await nextFrames(game, 2);
+    const changedDraws = draws() - d0;
+    t.setColor("#ffffff");
+    await nextFrames(game, 2);
+    d0 = draws();
+    t.setText("12345"); void t.width; t.setText("3");
+    await nextFrames(game, 2);
+    const measuredDraws = draws() - d0, size1 = t.width + "x" + t.height;
+    t.destroy();
+    const detail = !("same" in rt.textStats()) ? "not installed" : sameDraws ? "drawn " + sameDraws + " times though unchanged"
+      : !sameTex ? "lost its texture" : changedDraws !== 1 ? "a new colour drawn " + changedDraws + " times"
+      : measuredDraws !== 1 ? "measured as another text, then back: drawn " + measuredDraws + " times"
+      : size1 !== size0 ? "size " + size1 + " after, " + size0 + " before" : "";
+    report("fastpath: a text changed back to what it shows isn't drawn again", !detail, detail);
+  }
   // js/fastpath.js 4b: rex's BBCodeText (the game's rich text), built the way PokeRogue builds its
   // option lists (constructor, setShadow, setLineSpacing, two setTexts, then its width), gives the
   // same sizes, lines and canvas pixels as rex's own code, with one draw per text; destroyed ones'
@@ -415,6 +447,121 @@ async function run() {
       detail = got !== ref ? got + " vs Phaser's " + ref : "";
     }
     report("fastpath: the input plugin's object list kept with sets is Phaser's", !detail, detail);
+  }
+  // js/sprite_gc.js: the textures (and animations) it must never unload are found: shown by an object
+  // in a container on the display list, by a sprite on no list, by an image only a root holds, and
+  // played as an animation by a sprite on no list; one nothing uses is not.
+  {
+    const sc = game.scene.getScene("test");
+    let detail = rt.spriteGcInUse ? "" : "not installed";
+    if (!detail) {
+      const img = sc.textures.get("atlas").getSourceImage();
+      const keys = ["pkmn__a", "pkmn__b", "pkmn__c", "pkmn__d", "pkmn__e"];
+      for (const k of keys) sc.textures.addImage(k, img);
+      sc.anims.create({ key: "pkmn__c", frames: [{ key: "pkmn__c", frame: "__BASE" }], repeat: -1 });
+      const box = sc.add.container(0, 0);
+      box.add(sc.add.sprite(0, 0, "pkmn__a"));
+      const b = sc.make.sprite({ key: "pkmn__b" }, false);
+      const c = sc.make.sprite({ key: "atlas" }, false);
+      c.play("pkmn__c");
+      const e = sc.make.image({ key: "pkmn__e" }, false);
+      const used = rt.spriteGcInUse(game, [[e]]);
+      const got = ["a", "b", "c", "d", "e"].filter((k) => used.has("pkmn__" + k)).join("");
+      detail = got !== "abce" ? "found " + got + " (want abce)" : "";
+      box.destroy(), b.destroy(), c.destroy(), e.destroy();
+      sc.anims.remove("pkmn__c");
+      // an unloaded animation leaves no listener on the manager (each Animation listens to its
+      // PAUSE_ALL and RESUME_ALL; left there, they kept it and its frames alive)
+      if (!detail && rt.spriteGcUnloadAnim) {
+        const am = sc.anims, E = Phaser.Animations.Events;
+        const count = () => am.listenerCount(E.PAUSE_ALL) + "/" + am.listenerCount(E.RESUME_ALL);
+        const before = count();
+        am.create({ key: "pkmn__d", frames: [{ key: "pkmn__d", frame: "__BASE" }], repeat: -1 });
+        const made = count(), anim = am.get("pkmn__d");
+        rt.spriteGcUnloadAnim(am, "pkmn__d");
+        const after = count();
+        detail = made === before ? "the animation added no listeners (test stale?)" : after !== before
+          ? "listeners " + after + " after unloading, " + before + " before" : am.exists("pkmn__d") ? "still in the manager"
+          : anim.frames.length ? "its frames kept" : "";
+      }
+      for (const k of keys) sc.textures.remove(k);
+    }
+    report("sprite_gc: textures in use are found on lists, off them and in animations", !detail, detail);
+  }
+  // gamefix.c "starter icons kept, not remade" (js/core.js __pkrStarterIcon): a starter slot's icon set
+  // again comes out as the game's new one would: the slot's children in the same order, the icon's
+  // place, size, look and frame, no tweens left on it, out of the icon animation helper.
+  {
+    const sc = game.scene.getScene("test");
+    let detail = "";
+    try {
+      const fixed = starterChunk;
+      const text = await (await fetch("./starter-Pk7rTstB.js")).text();
+      const plain = new Function(text.replace(/export (function|class)/g, "$1") + "\nreturn { make };")();
+      const species = (n) => ({ getIconAtlasKey: () => "atlas", getIconId: (female) => "f" + ((n + (female ? 4 : 0)) % 8) });
+      const z = { getSpecies: (id) => species(id) };
+      const run = (mod) => {
+        const helper = { icons: new Map() };
+        const saved = sc.ui;
+        sc.ui = { handlers: [] };
+        const { StarterContainer } = mod.make(sc, z);
+        const slot = new StarterContainer(1);
+        sc.ui.handlers.push({ starterContainers: [slot], iconAnimHandler: helper });
+        const out = [];
+        let made = 0;
+        const add = sc.add.sprite;
+        sc.add.sprite = function () { made++; return add.apply(this, arguments); };
+        try {
+          for (const [id, female] of [[1, false], [2, true], [3, false], [3, false]]) {
+            slot.setSpecies(id, { shiny: false, formIndex: 0, female, variant: 0 });
+            const i = slot.icon;
+            out.push(slot.list.map((o) => o.name || o.type).join(",") + "|" + [i.x, i.y, i.scaleX, i.originX, i.alpha, i.visible,
+              i.tintTopLeft, i.tintFill, i.texture.key, i.frame.name, i.angle, i.flipX].join(",") + "|tweens " +
+              sc.tweens.getTweensOf(i).length + "|helper " + helper.icons.has(i));
+            // what the screen does to an icon between refreshes: an upgrade animation, the helper,
+            // the value check's alpha, a tint
+            sc.tweens.add({ targets: i, y: 5, duration: 1000, yoyo: true, repeat: -1 });
+            helper.icons.set(i, { mode: 3, restY: 2 });
+            i.setAlpha(0.375).setTint(0x808080).setVisible(false);
+          }
+        } finally { sc.add.sprite = add; }
+        slot.destroy();
+        sc.ui = saved;
+        return { out: out.join(" / "), made };
+      };
+      const p = run(plain), f = run(fixed);
+      detail = f.out !== p.out ? f.out + " VS the game's " + p.out : f.made !== 1 ? "kept version made " + f.made + " sprites (the game " + p.made + ")" : "";
+    } catch (e) { detail = String(e) + " " + (e && e.stack); }
+    report("gamefix: a starter slot's kept icon is set as the game's new one", !detail, detail);
+  }
+  // js/fastpath.js 7b: a child taken out of a container (not destroyed) loses the DESTROY listener the
+  // container gave it; Phaser 3.90 leaves it, one more each time the child is added back (log225).
+  // The container's list and the child's destruction come out the same either way.
+  {
+    const sc = game.scene.getScene("test");
+    let detail = rt.containerListenerFix ? "" : "not installed";
+    if (!detail) {
+      const run = (on) => {
+        rt.fastpath.set(on);
+        const box = sc.add.container(0, 0), other = sc.add.container(0, 0);
+        const a = sc.add.image(0, 0, "atlas", 0).setName("a"), b = sc.add.image(0, 0, "atlas", 0).setName("b");
+        for (let i = 0; i < 5; i++) { box.add([a, b]); box.removeAll(); }
+        box.add([a, b]); box.remove(b);
+        other.add(b);
+        const listeners = a.listenerCount("destroy") + "/" + b.listenerCount("destroy");
+        a.destroy();
+        const out = box.list.map((o) => o.name).join(",") + " | " + other.list.map((o) => o.name).join(",");
+        b.destroy();
+        const after = box.list.length + "," + other.list.length;
+        box.destroy(), other.destroy();
+        return { listeners, out: out + " | " + after };
+      };
+      const ref = run(false), got = run(true);
+      rt.fastpath.set(true);
+      detail = got.out !== ref.out ? got.out + " vs Phaser's " + ref.out
+        : got.listeners !== "1/1" ? "destroy listeners " + got.listeners + " (Phaser's " + ref.listeners + ")" : "";
+    }
+    report("fastpath: a container takes its DESTROY listener off a child it lets go", !detail, detail);
   }
   // js/lazy_ui.js: handlers PokeRogue's UI sets up at each reset are built on first use instead. A
   // never-built one is destroyed without its destroy() (which reads what setup() made); a used one is

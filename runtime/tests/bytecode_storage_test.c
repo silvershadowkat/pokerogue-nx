@@ -21,6 +21,10 @@ int __wrap_rename(const char *from, const char *to) {
     return __real_rename(from, to);
 }
 static void expect(const char *path, const char *text) {
+    if (strstr(path, ".qbc4")) {
+        size_t len = 0; char *code = bytecode_read(path, &len);
+        assert(code && len == strlen(text) && !memcmp(code, text, len)); free(code); return;
+    }
     char buf[2048] = {0};
     FILE *f = fopen(path, "rb");
     assert(f);
@@ -31,16 +35,16 @@ static void expect(const char *path, const char *text) {
 int main(void) {
     char dir[] = "/tmp/pokerogue-bytecode-XXXXXX";
     assert(mkdtemp(dir) && chdir(dir) == 0);
-    const char *one = "./bytecode/0000000000000001.qbc3";
-    const char *two = "./bytecode/0000000000000002.qbc3";
+    const char *one = "./bytecode/0000000000000001.qbc4";
+    const char *two = "./bytecode/0000000000000002.qbc4";
     assert(module_bytecode_write(one, "old module", 10));
     assert(module_bytecode_write(one, "new module", 10));
     expect(one, "new module");
-    expect("./bytecode/0000000000000001.qbc3.bak", "old module");
+    expect("./bytecode/0000000000000001.qbc4.bak", "old module");
     bytecode_note_loaded(one);
     test_ms += 3001;
     module_list_flush();
-    expect("./bytecode/startup.txt", "./bytecode/0000000000000001.qbc3\n");
+    expect("./bytecode/startup.txt", "./bytecode/0000000000000001.qbc4\n");
     assert(!bc_list_dirty);
     assert(module_bytecode_write(two, "second module", 13));
     bytecode_note_loaded(two);
@@ -48,17 +52,17 @@ int main(void) {
     fail_install = true;
     module_list_flush();
     assert(bc_list_dirty);
-    expect("./bytecode/startup.txt", "./bytecode/0000000000000001.qbc3\n");
-    expect("./bytecode/startup.txt.tmp", "./bytecode/0000000000000001.qbc3\n./bytecode/0000000000000002.qbc3\n");
+    expect("./bytecode/startup.txt", "./bytecode/0000000000000001.qbc4\n");
+    expect("./bytecode/startup.txt.tmp", "./bytecode/0000000000000001.qbc4\n./bytecode/0000000000000002.qbc4\n");
     fail_install = false;
     test_ms += 3001;
     module_list_flush();
     assert(!bc_list_dirty);
-    expect("./bytecode/startup.txt", "./bytecode/0000000000000001.qbc3\n./bytecode/0000000000000002.qbc3\n");
+    expect("./bytecode/startup.txt", "./bytecode/0000000000000001.qbc4\n./bytecode/0000000000000002.qbc4\n");
     assert(access("./bytecode/startup.txt.tmp", F_OK) != 0);
-    expect("./bytecode/startup.txt.bak", "./bytecode/0000000000000001.qbc3\n");
+    expect("./bytecode/startup.txt.bak", "./bytecode/0000000000000001.qbc4\n");
     remove(one); remove(two);
-    remove("./bytecode/0000000000000001.qbc3.bak");
+    remove("./bytecode/0000000000000001.qbc4.bak");
     remove("./bytecode/startup.txt"); remove("./bytecode/startup.txt.bak");
     assert(rmdir("./bytecode") == 0 && chdir("/") == 0 && rmdir(dir) == 0);
     puts("PASS: actual module/index writers replace Switch files, preserve prior data on failure, retry and clear completed temporary writes");

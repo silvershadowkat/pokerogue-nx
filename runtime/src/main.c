@@ -112,6 +112,20 @@ static int log_thread_state; // 0: not started, 1: running, -1: couldn't start (
 
 bool host_logging(void) { return log_fp != NULL; }
 
+// Starts log.txt (the previous one becomes log-prev.txt) and writes its first line: at startup, or
+// in a player build when the start screen's "Write a log" toggle is turned on (`why` says so).
+void host_log_open(const char *why) {
+    if (log_fp) return;
+    char path[512], prev[512];
+    snprintf(path, sizeof path, "%s/log.txt", g_cfg.data_dir);
+    snprintf(prev, sizeof prev, "%s/log-prev.txt", g_cfg.data_dir);
+    remove(prev);
+    rename(path, prev);
+    log_fp = fopen(path, "w");
+    host_log("%s, built %s | QuickJS-ng %s | page %s%s%s", host_version_string(), __DATE__, JS_GetVersion(),
+             g_cfg.base_url, why ? " | " : "", why ? why : "");
+}
+
 static void log_out(const char *p, size_t n) {
 #ifdef __ANDROID__
     __android_log_print(ANDROID_LOG_INFO,"PokeRogueNX","%.*s",(int)n,p);
@@ -448,7 +462,7 @@ static void control_poll(JSContext *ctx, bool *quit) {
 
 const char *host_version_string(void) {
 #if defined(__SWITCH__) || defined(__ANDROID__)
-    return "PokeRogue 0.3.0-beta.3 | Vita runtime " PKR_VERSION " (" PKR_COMMIT ")";
+    return "PokeRogue 0.3.0-beta.4 | Vita runtime " PKR_VERSION " (" PKR_COMMIT ")";
 #else
     return "PokeRogue Native " PKR_VERSION PKR_FLAVOR " (" PKR_COMMIT ")";
 #endif
@@ -484,12 +498,19 @@ void mem_breakdown(const char *stage) {
     size_t a_pcm, a_mp3;
     int a_voices;
     audio_memory(&a_pcm, &a_mp3, &a_voices);
-    host_log("[mem] %s: audio %.1f MB decoded + %.1f MB streamed music, %d playing", stage, a_pcm / 1048576.0,
-             a_mp3 / 1048576.0, a_voices);
+    size_t k_pcm = 0, k_files = 0;
+    int k_dropped = 0, k_redone = 0, k_written = 0;
+    audio_memory_kept(&k_pcm, &k_files, &k_dropped, &k_redone, &k_written);
+    host_log("[mem] %s: audio %.1f MB decoded (M4A and WAV %.1f MB, M4A files %.1f MB; %d dropped, %d brought back, "
+             "%d WAVs written out) + %.1f MB streamed music, %d playing", stage, a_pcm / 1048576.0, k_pcm / 1048576.0,
+             k_files / 1048576.0, k_dropped, k_redone, k_written, a_mp3 / 1048576.0, a_voices);
+    int img_dropped, img_redone;
+    double img_redone_ms;
+    canvas_image_trim_stats(&img_dropped, &img_redone, &img_redone_ms);
     host_log("[mem] %s: heap in use %.0f MB | JS %.0f MB%s | canvases %.1f MB (%d) | fonts %.1f MB | images %.1f MB "
-             "files + %.1f MB decoded | GPU textures %.1f MB (%d), peak %.1f MB",
+             "files + %.1f MB decoded (%d dropped, %d decoded again in %.0f ms) | GPU textures %.1f MB (%d), peak %.1f MB",
              stage, (unsigned)mi.uordblks / 1048576.0, js, js_estimate ? " after the last collection" : "", canv / 1048576.0, n_canv, fonts / 1048576.0,
-             img_enc / 1048576.0, img_dec / 1048576.0, tex / 1048576.0, n_tex, tex_peak / 1048576.0);
+             img_enc / 1048576.0, img_dec / 1048576.0, img_dropped, img_redone, img_redone_ms, tex / 1048576.0, n_tex, tex_peak / 1048576.0);
 #ifdef __vita__
     // vitaGL's GPU memory pools (textures, buffers); when they're full it falls back to the heap.
     host_log("[mem] %s: GPU pools free: video %.1f of %.0f MB, RAM %.1f of %.0f MB, contiguous %.1f of %.0f MB, "
@@ -548,6 +569,7 @@ static void perf_add(double js_ms) {
     double secs = (host_now_ms() - perf_t0) / 1000.0;
     // A window closes after 300 frames or 10 s, so slow stretches (loading) still get reported.
     if (perf_n < PERF_WINDOW && secs < 10) return;
+    canvas_trim_images();
     if (!host_logging()) {
         double d1, d2;
         int i1, i2;
@@ -824,6 +846,13 @@ static void gc_at_save(void) {
     host_log("[gc] collected after the game saved: %.0f ms, JS heap %.1f -> %.1f MB", ms, before / 1048576.0, gc_left / 1048576.0);
 }
 
+// What the last collection left of the JS heap, and the fixed heap's size (0 on the desktop), in
+// bytes: js/sprite_gc.js unloads unused Pokemon sprites when the first gets large.
+void host_js_memory(double *live, double *heap_size) {
+    *live = (double)gc_left;
+    *heap_size = (double)HEAP_SIZE;
+}
+
 // An allocation for pixels failed (canvas2d.c): collect now, from inside the game's call, and let
 // the caller try once more. log225: after an hour, at 226 of 256 MB in use, a 1224x357 canvas found
 // no room (garbage and fragmentation), its text drawing threw in Phaser's render, and the game
@@ -913,6 +942,7 @@ static void save_screenshot(const char *path) {
 //                                   saves stay on the console); automatic if <data>/game exists
 //   online=1                        play the live site even if <data>/game exists
 //   log=1                           write log.txt (player builds; debug builds always do)
+//   audiokeep=10                    MB of decoded cries and sounds kept (audio.c; 0: none)
 //   gamefix=0                       the game's code exactly as it is, without gamefix.c's rewrites
 //   fps30=1                         30 fps lock: a frame every other vblank (also on the start screen,
 //                                   and L + R + SQUARE in game)
@@ -1012,8 +1042,10 @@ void config_set(const char *key, const char *value) {
     }
     if (!done) fprintf(out, "%s=%s\n", key, value);
     if (in) fclose(in);
-    bool ok = fclose(out) == 0;
-    if (ok) storage_install_file(tmp, path);
+    bool ok = !ferror(out);
+    ok &= fclose(out) == 0;
+    if (ok) ok = storage_install_file(tmp, path);
+    if (!ok) { remove(tmp); host_log("[config] couldn't write %s; %s stays as it was", path, key); }
 }
 
 static void load_config_file(void) {
@@ -1029,7 +1061,9 @@ static void load_config_file(void) {
         if (!eq || line[0] == '#') continue;
         *eq = 0;
         const char *k = line, *v = eq + 1;
-        if (!strcmp(k, "log")) {
+        if (!strcmp(k, "audiokeep")) {
+            audio_set_keep_budget((size_t)(atof(v) * 1048576));
+        } else if (!strcmp(k, "log")) {
             g_cfg.log = atoi(v) != 0;
         } else if (!strcmp(k, "directtouch")) {
             g_cfg.direct_touch = atoi(v) != 0;
@@ -1189,18 +1223,12 @@ int main(int argc, char **argv) {
     g_cfg.app_dir = g_cfg.data_dir;
     mkdirs(g_cfg.data_dir);
     char path[512], prev_log[512];
-    snprintf(path, sizeof path, "%s/log.txt", g_cfg.data_dir);
     // The previous run's log is kept: after a crash it is the one that matters.
     snprintf(prev_log, sizeof prev_log, "%s/log-prev.txt", g_cfg.data_dir);
 #ifndef PKR_DEBUG
     if (g_cfg.log)
 #endif
-    {
-        remove(prev_log);
-        rename(path, prev_log);
-        log_fp = fopen(path, "w");
-    }
-    host_log("%s, built %s | QuickJS-ng %s | page %s", host_version_string(), __DATE__, JS_GetVersion(), g_cfg.base_url);
+        host_log_open(NULL);
 
 
     mem_report("start");

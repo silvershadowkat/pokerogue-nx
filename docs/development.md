@@ -23,7 +23,8 @@ Homebrew**. Builds are marked unsafe so they can raise the CPU clock.
    ```
 3. In VitaShell, open `ux0:data/`, press ✕ on the .vpk, install it, and accept the permissions prompt.
 4. Logs are written to `ux0:data/pokerogue/log.txt` (dev builds; a player build only with `log=1`
-   in `ux0:data/pokerogue/config.txt`, see "Debug features" below):
+   in `ux0:data/pokerogue/config.txt` or the start screen's "Write a log" toggle, see "Debug
+   features" below):
    ```bash
    curl ftp://VITA_IP:1337/ux0:/data/pokerogue/log.txt -o log.txt
    ```
@@ -59,7 +60,9 @@ build that was declined isn't offered again.
 The updater (like VitaShell's VSUPDATER) is built with every dev build.
 
 Publishing: every push to `main` whose CI run passes is published by itself ("Publish dev build"
-runs after CI, with the commit title as the label); pull requests and other branches never are. It
+runs after CI, with the commit title as the label), unless a newer CI run of `main` has started;
+pull requests and other branches never are. A push of only docs has no CI run, so it publishes
+nothing and leaves the dev build as it is. It
 replaces the release with that run's dev .vpk and its `build.json`. By hand (Actions -> "Publish dev
 build" -> Run workflow, with a label and optionally a CI run; empty: the newest successful CI run on
 `main`) it publishes another run: an older one is a rollback. From a shell:
@@ -145,15 +148,18 @@ control channel (`ux0:data/pokerogue/control.txt` on the Vita, read every frame)
 profiler, the debug line, the watchdog thread, `<data>/debug.js` and config.txt's debugging options
 (`url`, `frames`, `interrupt`, `hud`, `profile`, `sample`, `profile_rate`, `sample_ms`, `nettrace`).
 A player build writes no log and its JS `console.*` does nothing, unless `log=1` is in config.txt
-(for a bug report). `-DPKR_DEBUG=OFF` builds the player variant on the desktop for testing.
+(for a bug report): the start screen's "Write a log (log.txt)" toggle (player builds only) sets it,
+and turned on there it starts the log at once. `-DPKR_DEBUG=OFF` builds the player variant on the desktop for testing.
 
 **Releases for players:** set `runtime/VERSION` to the release's version (1.1), write the notes as
 `docs/releases/v<version>.md`, commit, and push a tag `v<version>` on that commit (`runtime/VERSION`
 must match), or run the "Release" workflow
-by hand with that tag name (and optionally a commit of main; default the newest), which tags the
+by hand with that tag name (and optionally a commit of main, full or short hash; default the newest), which tags the
 commit itself (cloud sessions can't push tags). CI runs on main are never cancelled by a newer
 push, so a release can wait for an older commit's run. `.github/workflows/release.yml` waits for the commit's CI run to pass and publishes its
-player .vpk (the file CI ran in Vita3K) as a release with those notes.
+player .vpk (the file CI ran in Vita3K) as a release with those notes. For a commit that changed
+only docs (no CI run of its own), it takes a run from the newest commit before it that changed
+anything else, or from a docs commit after that one: they all built the same files.
 
 In debug builds, TRIANGLE while holding L + R switches the shader variants (gl.c) off and on at
 once, with a notice in the corner and a `[gl] shader variants` line in the log (`variants` on the
@@ -207,7 +213,8 @@ renamed to `<data>/game.zip`). The game is played straight from the zip (miniz, 
 unpacking its 34,000 files ran at ~0.1 MB/s on the Vita's memory card. An unpacked folder in
 `<data>/game/` also works. The choice is remembered in `<data>/launcher.txt`. The offline game is
 played served under the made-up origin `https://offline.invalid`, no login,
-saves in `<data>/localStorage-offline.json`. `online=1` in `config.txt` ignores the folder;
+saves in `<data>/localStorage-offline.json` (the file each save replaced stays as `.bak` and is
+loaded if the file is damaged, which is then kept as `.bad`). `online=1` in `config.txt` ignores the folder;
 `local=<dir>` names another one. The build used for testing is the one Admiral-Billy's PokeRogue
 App downloads for its offline mode (`game.zip` from github.com/Admiral-Billy/pokerogue/releases,
 ~530 MB, 735 MB unpacked; the `.map` files can be deleted).
@@ -323,7 +330,9 @@ of API requests. Don't test logins in a loop from a server: Cloudflare starts bl
   (`runtime/patches/vitagl-0002-*.patch`).
 
 ## Tests
-CI (`.github/workflows/ci.yml`) runs on every push and pull request; the same scripts run locally:
+CI (`.github/workflows/ci.yml`) runs on every push and pull request, except those that change only
+documentation (`docs/`, `*.md`, `LICENSE`: nothing built or tested; since 2026-11-16, 1.1.4); the
+same scripts run locally:
 
 | script | what it checks |
 |---|---|
@@ -347,6 +356,33 @@ In Vita3K the pages need a shader compiler: your own copy in `runtime/.cache/pri
 runtime's copy from AnimMouse/SceShaccCg, pinned to a commit and hash-checked, only inside the job.
 Vita3K doesn't write its rendering back to the Vita's memory, so `readPixels` returns zeros there;
 the smoke test skips pixel comparisons on the Vita's GPU.
+
+**Extended test (before a release):** `runtime/scripts/test_extended.sh` plays the offline game on
+the desktop runtime for most of an hour; in CI, Actions -> "Extended test" -> Run workflow
+(`.github/workflows/extended.yml`, by hand only; the report becomes the run's summary, the logs and
+end screenshots an artifact). A bot (`tests/extended/autoplay.js`, loaded through the control
+channel) presses the game's own buttons: it fights with the move the game's damage estimate rates
+best, takes the first reward, sends out the next Pokemon, answers questions (no, except those that
+only end with a yes), and goes through evolutions, hatches, mystery encounters and menus. Scenarios,
+each in its own data folder under `.cache/ext/`:
+
+| scenario | plays |
+|---|---|
+| `fresh` | a new save: title, New Game, Classic, starter select, waves 1-7 |
+| `wave163` | the late fixture for 12 waves (rewards, a biome change and its sprite unloading) |
+| `wave199` | the last wave: the final boss, the end of the run, back to the title |
+| `double` | the wave-163 run as a double battle (`tests/extended/make_double.py`) |
+| `nogamefix` | the game as published (`gamefix=0`) |
+| `gameover` | no healing: lost battles, the game over, back to the title |
+
+All but `gameover` heal the party at each new wave, so a long run tests the runtime rather than the
+bot's tactics. `tests/extended/report.py` writes `.cache/ext/report.md` and fails a scenario that
+didn't reach its target (or the title, where that is the expected end), got stuck (no new turn for
+3 minutes), logged an uncaught JS error or rejection, or ran out of memory; it also lists the
+game's error lines, stalls, the slowest frames (desktop timings), collections, sprite unloading and
+the gamefix rules applied. `scripts/fetch_offline_game.sh` downloads the offline game (Admiral-Billy's
+latest `game.zip`, ~530 MB; CI caches it per release); locally `PKR_GAME_ZIP` points at one.
+`scripts/test_extended.sh wave163 double` runs only those; `PKR_EXT_SCALE=3` triples the waves.
 
 ## Measuring the real game
 See [tools/measure/README.md](../tools/measure/README.md): headless Chrome running a local dev

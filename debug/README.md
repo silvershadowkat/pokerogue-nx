@@ -18,7 +18,7 @@ project. Work in a separate official checkout; the builder never resets it.
 
 ```sh
 git clone https://github.com/pagefaultgames/pokerogue work/debug-source
-git -C work/debug-source checkout --detach f045bef687ee7a60faa94679939d5d9e074cb19d
+git -C work/debug-source checkout --detach 915fae1ee3b3994f29e72bfd42ce7779100252f8
 python scripts/build_debug.py prepare --source work/debug-source
 git -C work/debug-source submodule update --init --depth 1 assets locales
 cd work/debug-source

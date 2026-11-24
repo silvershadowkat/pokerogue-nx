@@ -101,6 +101,26 @@
 // computes each once per sort (once per enemy move choice inside one) and sorts with the same
 // comparisons. The speed sort runs at each turn's start and in many ability and move checks.
 //
+// starter tooltips replaced, not added: the starter select screen's summary (StarterSummary) gives its
+// ability and passive texts a pointerover and a pointerout listener (the tooltips) each time the
+// cursor reaches a caught species, and before that takes the old pointerover off but not the
+// pointerout; its candy container (and the Pokedex page's) adds both and takes neither off. After
+// many cursor moves (log225: 16 minutes in that screen) each holds hundreds of listeners and
+// closures, and a touch there runs all of them. The old pair now goes before the new one is added:
+// one pointerover and one pointerout, as the code means (nothing else listens to these objects).
+//
+// starter icons kept, not remade: the starter select screen refreshes its 81 slots (updateScroll) on
+// every filter change and scroll, and each slot's setSpecies destroyed its icon sprite and made a new
+// one: 12.8 of a filter change's 30.7 ms on the desktop with ~570 starters caught (about 1 s on the
+// Vita). js/core.js __pkrStarterIcon takes the slot's icon out of it, stops its tweens, drops it from
+// its screen's icon animation helper, and sets it as a new sprite would be (position, scale, origin,
+// alpha, visible, angle, flip, depth, texture, frame, tint); the game's code then adds it back and
+// sets the rest as before. The helper re-adds it and the upgrade animation makes its tweens again, as
+// for a new icon; the old code left the old icon's tweens running on a destroyed sprite. The icon stays
+// in the slot when only the badges the code then brings to the top (label, shiny icons, hidden ability,
+// favorite, classic win, candy upgrade: the list this rule's text names) follow it there: taken out
+// and added back it would end in the same place, before them.
+//
 // starter slots from one starter list: the starter select screen's setup (after every game reset:
 // a new run rebuilds the UI) creates its 81 slots with `getAllStarters()[i]`, and each call goes
 // through all ~1300 species to list the starters again: 4.7 s of an 11 s frame on the Vita (0.89,
@@ -250,6 +270,26 @@ static const fix FIXES[] = {
      "![`natureAttr`,`abilityAttr`,`passiveAttr`].includes(@1)?BigInt(@2??0):@2},"
      "[`gameStats`,`eggs`,`ribbons`],`Attr`,[`natureAttr`,`abilityAttr`,`passiveAttr`])",
      NULL, "parseSystemData", 0},
+    // The game parses each move's animation (battle-anims/<move>.json: AnimConfig frames) once and
+    // keeps it for the session: ~0.5 MB of JS a wave late in a run (log256). js/sprite_gc.js drops
+    // those of moves no Pokemon in either party has at a new biome; the game loads them again
+    // through initMoveAnim before it plays them (a summoned Pokemon's moveset, LoadMoveAnimPhase
+    // for called moves, a learned move), and a missing one isn't drawn rather than failing.
+    {"move animations reachable for unloading",
+     "function initMoveAnim(@1){return new Promise(@2=>{if(@3.has(@1)){",
+     "function initMoveAnim(@1){globalThis.__pkrMoveAnims=@3;return new Promise(@2=>{if(@3.has(@1)){",
+     NULL, "initMoveAnim", 0},
+    // The starter select screen loads the cursor's species and plays its sprite when the load is
+    // done (updateSprite), without cancelling an earlier request. loadAssets first awaits the
+    // species' variant colours, so moving on quickly can finish an earlier species after a later
+    // one, and its sprite then replaces the right one (log258's screenshots: Magnemite's details
+    // with Giratina's sprite; much likelier on the Vita's slower loads). Only the latest request
+    // plays now; without a race the same one plays as before.
+    {"starter sprite from the latest request only",
+     "updateSprite(@1,@2,@3,@4,@5){@1.loadAssets(@2,@3,@4,@5,!0).then(()=>{this.pokemonSprite.play(",
+     "updateSprite(@1,@2,@3,@4,@5){let pkrT=this.__pkrSpriteTicket=(this.__pkrSpriteTicket|0)+1;"
+     "@1.loadAssets(@2,@3,@4,@5,!0).then(()=>{if(this.__pkrSpriteTicket!==pkrT)return;this.pokemonSprite.play(",
+     NULL, "updateSprite", 0},
     {"enemy move choice remembers what it asks again",
      "getNextMove(){let @1=this.getMoveQueue();",
      "getNextMove(){return globalThis.__pkrAIChoice(this,()=>this.__pkrNextMove())}__pkrNextMove(){let @1=this.getMoveQueue();",
@@ -263,6 +303,30 @@ static const fix FIXES[] = {
      "@1.sort((@2,@3)=>{let @4=getPokemon(@2[0]).getEffectiveStat(5);return getPokemon(@3[0]).getEffectiveStat(5)-@4})",
      "globalThis.__pkrSpeedSort(@1,getPokemon)",
      NULL, "sortBySpeed", 0},
+    {"starter tooltips replaced, not added (ability, passive)",
+     "this.pokemonAbilityText.off(`pointerover`),this.pokemonPassiveText.off(`pointerover`)",
+     "this.pokemonAbilityText.off(`pointerover`).off(`pointerout`),this.pokemonPassiveText.off(`pointerover`).off(`pointerout`)",
+     NULL, "pokemonAbilityText", 2},
+    {"starter tooltips replaced, not added (candy, Pokedex page)",
+     "this.pokemonCandyContainer.on(`pointerover`,",
+     "this.pokemonCandyContainer.off(`pointerover`).off(`pointerout`).on(`pointerover`,",
+     NULL, "pokemonCandyContainer", 0},
+    {"starter tooltips replaced, not added (candy)",
+     "this.pokemonCandyContainer.setVisible(!0).on(`pointerover`,",
+     "this.pokemonCandyContainer.setVisible(!0).off(`pointerover`).off(`pointerout`).on(`pointerover`,",
+     NULL, "pokemonCandyContainer", 0},
+    {"starter icons kept, not remade",
+     "this.icon&&(this.remove(this.icon),this.icon.destroy()),this.icon=@1.add.sprite(-2,2,this.species.getIconAtlasKey(@2,@3,@4))"
+     ".setScale(.5).setOrigin(0).setFrame(this.species.getIconId(@5,@2,@3,@4)).setTint(0),this.checkIconId(@5,@2,@3,@4),"
+     "this.add(this.icon),[this.label,...this.shinyIcons,this.hiddenAbilityIcon,this.favoriteIcon,this.classicWinIcon,"
+     "this.candyUpgradeIcon,this.candyUpgradeOverlayIcon].forEach(",
+     "this.icon=globalThis.__pkrStarterIcon(this,@1,this.species.getIconAtlasKey(@2,@3,@4),this.species.getIconId(@5,@2,@3,@4),"
+     "[this.label,...this.shinyIcons,this.hiddenAbilityIcon,this.favoriteIcon,this.classicWinIcon,this.candyUpgradeIcon,"
+     "this.candyUpgradeOverlayIcon])||(this.icon&&(this.remove(this.icon),this.icon.destroy()),@1.add.sprite(-2,2,"
+     "this.species.getIconAtlasKey(@2,@3,@4)).setScale(.5).setOrigin(0).setFrame(this.species.getIconId(@5,@2,@3,@4)).setTint(0)),"
+     "this.checkIconId(@5,@2,@3,@4),this.add(this.icon),[this.label,...this.shinyIcons,this.hiddenAbilityIcon,this.favoriteIcon,"
+     "this.classicWinIcon,this.candyUpgradeIcon,this.candyUpgradeOverlayIcon].forEach(",
+     NULL, "checkIconId", 0},
     {"icon loops: destroyed icons dropped, hidden ones left",
      "for(let[@1,@2]of this.icons)@1.y=@2.restY+this.getCurrentOffset(@2.mode)",
      "globalThis.__pkrIconSync(this)",
@@ -366,7 +430,7 @@ char *gamefix_source(const char *url, const char *src, size_t len, size_t *out_l
     char *cur = NULL;
     size_t cur_len = len;
     const char *in = src;
-    char applied[400] = "";
+    char applied[1024] = ""; // every rule's name: the battle scene chunk has over a dozen
     for (int f = 0; f < NFIX; f++) {
         const fix *x = &FIXES[f];
         if (!has_marker[f]) continue;

@@ -1556,3 +1556,323 @@ collection (0.27 MB, ~1,240 objects and ~8,500 properties per species: the atlas
 objects, its animation, and a copy of the atlas JSON in customData, ~18% of it, which neither Phaser's
 WebGL path nor the game reads). Nothing unloads them, in the browser either; on the Vita a long visit
 to the starter screen adds tens of MB for the rest of the session.
+
+### Why log225 ran out when longer sessions didn't; the starter screen (runtime 1.0.18, 2026-11-06)
+Memory, earlier sessions (JS left after a collection / most heap in use): log203 40 min, one run, 80 /
+214 MB; log207 128 min, one run, 84 / 235 MB (out of memory at wave 200, fixed in 1.0.12); log212,
+log216 under 70 / 175 MB. log225: 92 / 227 MB, the first session with a game over, 16 minutes in the
+starter select screen and a second run. Every gamefix rule still applied to the game's new build
+(battle-scene-DzzynR15, loading-scene-CKnNUEJ8), so nothing of ours stopped working; what that
+session did differently was load ~350 more species sprites (kept for the session, see above) and
+spend 16 minutes in a screen that accumulates listeners.
+The starter screen in log225 (81 `[stuck]` stacks) and on the desktop (wave-163 save, the screen
+opened over the battle with ui.setMode):
+- Idle, it costs 45-75 ms of JS a frame on the Vita (10-20 fps) and 2.4 ms on the desktop, nearly all
+  of it drawing (Phaser's container walk, the sprite pipelines, texts): the general render cost.
+- A cursor move: 2.6 ms of JS on the desktop (setStarter, setStarterDetails, the instructions), plus
+  loading the species' sprite. Phaser 3.90's Container.removeHandler takes the child's DESTROY
+  listener off this.remove where addHandler put this.onChildDestroyed, so every child taken out and
+  added back keeps one more; the screen's instructions do that to their icons twice per move (+1.5
+  listeners per move each, 82 after 40 moves), and each removal scans and copies the whole list. With
+  1,500 stale listeners a move's instructions cost 0.28 instead of 0.06 ms on the desktop. Fixed in
+  js/fastpath.js 7b (the listener addHandler made is taken off, as later Phaser does; tests/phaser).
+- The game's own leak, same screen: StarterSummary takes the old pointerover off its ability and
+  passive texts but not the pointerout, and its candy container (and the Pokedex page's) adds both
+  and removes neither: +1 closure per move each. gamefix "starter tooltips replaced, not added"
+  (three rules; tests/smoke, the tooltips shown the same both ways).
+  After 40 moves with both fixes, no object in the screen has more than 3 listeners.
+- A filter change: 19 ms on the desktop (~0.7 s on the Vita): filterStarters 13 ms (every filter's
+  values worked out for each of the ~600 starters, whatever is selected) and updateScroll 5 ms (each
+  of up to 81 slots destroys its icon sprite and makes a new one). Not changed yet.
+Also: src/gamefix.c's "[gamefix]" line was cut at 400 characters (the battle scene chunk's 19 rule
+names); it now has room for all.
+
+### Pokemon sprites unloaded when unused (runtime 1.0.19, 2026-11-06)
+js/sprite_gc.js, like a garbage collector for the species atlases (see log225 above: ~0.27 MB of JS
+each on the desktop, kept for the session). A pass unloads "pkmn__" atlas textures and their
+animations that no object uses and that loaded over a minute ago. "In use": any object on a scene's
+display or update list (into containers), every live sprite through its animation state
+(js/fastpath.js 9 keeps them all, on a list or not), objects the battle scene and UI handlers hold
+directly, what each plays or will play, and every sprite key of a Pokemon in either party (the
+fusion palette reads front and back atlases by name). A pass runs at a new biome or a new run (the
+old route's Pokemon won't come back soon), and under memory pressure: JS left by the last collection
+over 27% of the heap (69 MB on the Vita), at most once a minute and only after 20 more sprites were
+loaded. Never while a loader is busy. The game loads every Pokemon sprite through loadPokemonAtlas
+(Phaser's loader skips existing keys) and makes its animation when missing, so an unloaded sprite
+loads again from the disk cache when shown. Animations leave the manager's map directly:
+AnimationManager.remove would call every sprite's animation state for each one, and none plays them.
+Desktop (wave-163 save, 81 species loaded as the starter screen would): one pass unloaded 88 of 96
+atlases in 14 ms, 130.3 -> 115.3 MB of JS after a collection (21.7 MB had come with the 81); the
+battle drew the same; the starter screen reloaded and showed an unloaded species; a double-battle
+turn played after a pass; with the party's keys pinned, 14 of 15 kept in that battle.
+Switch: __rt.spriteGc = false. Log: "[sprites] <reason>: unloaded N of M Pokemon sprites ...".
+
+### The start screen waiting on background work (runtime 1.0.20, 2026-11-06)
+The owner: since some time after 1.0 the start screen ("Play online / Play offline") ignores input
+for ~30 s after launch, with nothing on screen saying why. In the 40 most recent logs the choice
+always comes after the previous log's upload finished (test builds send it at start: 350 KB by
+now, with the [stuck] and [perf] lines of an hour, over busy hotel Wi-Fi), never before. The upload
+thread and the offline release check (a TLS request to GitHub) were the only helper threads that
+didn't lower their priority (plat_thread_setup): the Vita's kernel doesn't time-slice threads of
+equal priority, so a busy one can keep the start screen's thread from running.
+1.0.20: both run below the main thread on core 1, like the network, cache and decoder threads; the
+start screen says what runs in the background in place of its help line ("Sending the last
+session's log to the log server...", "Checking for a new offline game release..."); and the log now
+has the evidence that was missing: "[start] chosen after N s on the start screen", a line for any
+stretch over 0.5 s the screen didn't run, and each job's duration ("prev log upload: ... (N s)",
+"latest release on GitHub: ... (N s)").
+
+### Sprite unloading on the Vita (log229, 1.0.19; runtime 1.0.21, 2026-11-06)
+log229 (waves 31-41, ~18 minutes, Continue then a return to the title): three passes, 85 ms at the
+start (Continue: 0 of 16, 15 in use), 142 ms at wave 41's new biome (graveyard to abyss: 15 of 32
+unloaded, 17 in use), 65 ms at the title (14 of 17: the party isn't shown there; Continue loads
+it again). No JS errors, no missing sprites; JS left by a collection 47-60 MB. The game makes a new
+Arena for each biome as well as each run, so the wave-41 pass was logged as "new run"; 1.0.21 names
+it by what changed ("new biome", "new run", "title screen").
+
+### Starter screen filter changes (runtime 1.0.22, 2026-11-06)
+Desktop, wave-163 save with every species marked caught (572 starters shown, as in a long-played
+save), the starter select screen opened with ui.setMode: one filter change (updateStarters) took
+30.7 ms (about 1 s on the Vita): updateScroll 18.4 ms, of it setSpecies 12.8 ms (each of the 81 slots
+destroys its icon sprite and makes a new one); filterStarters 11.1 ms; the rest ~1 ms. log225's Vita
+stacks inside updateStarters: updateScroll 14 of 28, tryUpdateValue 12, filterStarters 1 (stacks are
+taken 0.5 s into a frame, so the later steps are over-represented).
+- gamefix "starter icons kept, not remade" + js/core.js __pkrStarterIcon: the slot's icon is reset to
+  what the game's new sprite would be (position, scale, origin, alpha, visible, angle, flip, depth,
+  texture, frame, tint), its tweens stopped, dropped from the screen's icon animation helper; it stays
+  in the slot when only the badges brought to the top next follow it (the rule's text names them).
+  Every slot's child order and icon state compared equal both ways after refreshes (81 slots, kept
+  and remade in both orders); tests/phaser checks the same on a copy of the code with real sprites.
+  updateStarters 31.9 -> 20.4 ms (-36%).
+- Tried and dropped: answering the type filter once per pair of types (isOfType reads only type1 and
+  type2): no change, the filter's ~10 ms are spread over many small checks per starter (the
+  Unlocks/Misc options' `some`, getStarterData, getStarter, the passive, cost and egg checks).
+- Found on the way: a dynamic import() from code resumed after an await in a frame callback (tests'
+  scene.js) or from a control-channel eval fails with "cannot read property 'length' of undefined"
+  before loading anything. The game's own lazy imports work; not looked into further.
+
+### The starter screen on the Vita after 1.0.22; texts set to what they show (runtime 1.0.23, 2026-11-06)
+log232 (1.0.22, the starter screen after the title): filter changes 0.88-0.90 s on the Vita (log225:
+1.05-1.08 s), so -15% there for the -36% on the desktop; the screen idles at 42-70 ms of JS a frame.
+The start screen: "[start] chosen after 7.4 s" with no stall line, but that start sent a 1 KB log
+(the previous run was the updater's), so the slow case is still to be seen.
+Several of log232's long frames were in drawing texts at render (textRender -> drawText ->
+updateText): each refresh sets every slot's cost label to its text and colours again (setText,
+setColor, setShadowColor), Phaser marks a text changed on every setColor even to the same colour, and
+js/fastpath.js 4 drew each again at the next render, canvas and GPU upload (texts are drawn at 6x).
+On the desktop one filter change gave 170 text updates and 88 draws. Now a text whose inputs (the
+signature 4 already kept for reusing destroyed texts' textures: words, font, colours, shadow,
+padding, spacing...) are those its texture was last drawn with isn't drawn again: 0 draws for the
+same change. A text measured in another state since its last draw (its sizes are that state's now)
+is drawn as before. tests/phaser checks: unchanged, not drawn; another colour, drawn once; measured as
+other words and set back, drawn once with Phaser's size. Switch: __rt.textSkipSame = false.
+
+### The start screen ignoring input; a log toggle for players (runtime 1.1.1, 2026-11-07)
+The start screen still took no input for a while after launch in log235 (47.5 s) and log240 (27 s,
+1.1), though the new lines showed it running all along (no "didn't run" stall) and its background
+jobs done in 0.6-1.9 s. Its input guard waited for a frame with every button released before any
+press counted (against cross held from launching the app), and buttons 6 and 7 are the rear
+touchpad's upper half (L2 / R2): fingers resting there kept it waiting until they moved, the same
+thing 1.0.9 fixed for the dialogs. Now the first reading only records what is held and later presses
+count (a button held from launching still doesn't, until pressed again), and the log says when the
+first press came ("[start] first button press after N s").
+Player builds' start screen gets a "Write a log (log.txt)" toggle beside the 30 fps lock: it sets
+config.txt log=1 (the README's way to write a log for a bug report), and turned on there it starts
+log.txt at once (main.c host_log_open, as at startup), so that run is logged too.
+
+### Memory over returns to the title: unloaded animations kept alive (log243; runtime 1.1.2, 2026-11-08)
+log243 (1.1, waves 71-103 in 48 minutes, four returns to the title): JS left by a collection 47 ->
+60 -> 67 -> 74 -> 77 MB, heap in use up to 218 of 256 MB. Desktop, wave-163 save, six resets with
+Continue (no waves between): +0.5 MB of JS each, +1,660 objects, +600 strings, +5 tweens and +26
+listeners on Phaser's AnimationManager. Those listeners were the leak: every Phaser Animation listens
+to the manager's PAUSE_ALL and RESUME_ALL from its constructor, and js/sprite_gc.js (1.0.19) took an
+unloaded animation out of the manager's map without them. The manager then kept each one alive with
+its ~88 frames, and through them the destroyed texture's frames: at every new biome and return to
+the title, the sprites "unloaded" stayed in memory (83 such listeners after a few resets). Unloading
+now removes both listeners and the animation's frames, as Phaser's Animation.destroy does (still
+without the REMOVE_ANIMATION event, which would call every sprite's animation state for each one).
+tests/phaser checks that an unloaded animation leaves no listener. Still left per reset: 5 endless
+tweens of the game's PokemonIconAnimHelper (the screens are rebuilt with new helpers; small).
+
+### What else grows over waves; cries kept compressed (log246; runtime 1.1.3, 2026-11-09)
+log246 (1.1.2, waves 103-121, 30 minutes): the start screen took its first press after 2.5 s (the
+1.1.1 fix). Heap in use peaked at 181 MB (log243, 1.1: 218); unloaded sprites are freed now (17-20
+per biome, a "memory" pass at 71 MB), but JS left by a collection still rose 47 -> 69 MB, and the
+decoded audio 13 -> 27 MB (C memory, inside the same 256 MB).
+Desktop, wave-163 save, the bot for 14 waves with a collection and counts after each wave: JS
+101.9 -> 123.9 MB (+9 MB in the first wave, then ~1 MB a wave; the biome change at 171 gave 2.3 MB
+back), arrays 96k -> 155k, objects 330k -> 427k, move animation textures ("PRAS-") 58 -> 104,
+Phaser's audio cache 145 -> 294 entries, decoded audio 8.6 -> 25.1 MB. By kind, decoded: move
+animation sounds 11.6 MB (220, mostly WAV: "PRSFX- ..."), cries 8.2 MB (33, M4A), sound effects 5.2 MB
+(37, WAV). All 86 move animation textures came to 3.1 MB of JS (removing them in an experiment):
+the rest of the JS growth is the move animations' data the game parses once per move and keeps
+(AnimConfig frames), which only a change to the game could drop. The move textures could only go at
+the title screen and would need the game's list of common animations (loaded once at startup), so
+they stay.
+1.1.3: M4A buffers (every cry, some move sounds) keep their file (~1/8 of their samples), and their
+decoded samples are kept within 6 MB (config.txt audiokeep=<MB>): past it, the least recently played
+that aren't playing are dropped; one played again is decoded on the decode thread and its voice
+starts once the samples are back (tens of ms late; the game's frame doesn't wait). WAVs stay decoded
+(their files are as big). Same 14 waves: decoded audio grew 9.6 MB (was 16.5), M4A held at 5.7 MB
+(18 dropped, 1 decoded again). With audiokeep=0 (every M4A dropped after each play): 53 dropped, 27
+decoded again in 5 waves, no voice left waiting, no errors. The [mem] audio line reports both.
+
+### Damaged files on the memory card: saves, cached code, the offline download (runtime 1.1.4, 2026-11-12)
+From a code review (no device log): five places where a failed write or a damaged file lost data
+or kept the app from starting. Desktop runtime, each case made by hand:
+- `config_set` (the start screen's toggles, the fps lock) removed config.txt before checking that
+  its new copy was written: a full card left none. Now the old file goes only when the new one is
+  whole (temp file on /dev/full: config.txt unchanged, a `[config]` log line).
+- localStorage and cookies (`js/storage.js`): a file that didn't parse loaded as empty, and the next
+  save replaced it. The offline game's saves exist nowhere else. Now every write keeps the file it
+  replaces as `<file>.bak` (a rename, on the writer thread); a file that is damaged, empty or
+  unreadable is moved to `<file>.bad`, the backup is loaded, and a dialog says so. The backup is
+  also what is left if the app dies between a write's two renames. tests/smoke checks it across its
+  two runs (the first leaves a damaged file, the second must start from the backup). Its first run
+  in Vita3K (CI) failed one check: renaming a file that doesn't exist deleted the target there
+  (on the desktop it leaves it), which for a missing save file would have been its backup. The
+  source is now checked before rename is called.
+- Compiled code (`<data>/bytecode/`, now `.qbc4`): QuickJS trusts bytecode as it reads it, so a
+  damaged file could crash every start. Each file ends with a checksum (Adler-32, miniz), checked
+  where it is read (the prefetch thread, mostly); a mismatch deletes the file and the module is
+  compiled again. All 13 files of the smoke page damaged or emptied: 13 "is damaged" lines, the
+  page's 39 checks pass. Every module is compiled once more after this update (the new extension).
+- HTTP disk cache: entries start with a 16-byte header (magic, length, Adler-32); a mismatch
+  deletes the entry and it is downloaded again. Entries from before have no header and are served
+  as they are (no re-download of the cache). And source from the cache that doesn't compile is
+  dropped and fetched once more in the same start (`net_cache_forget`), which also covers the old
+  entries. The smoke page over HTTP: 11 entries damaged -> 11 re-downloaded; 11 old-format entries
+  holding text that isn't JavaScript -> 11 "doesn't compile; downloading it again"; same results
+  as an undamaged run each time.
+- Offline game.zip: checked against the SHA-256 GitHub gives for the release's file (`digest` in
+  the release JSON), worked out as the download arrives; a part left by an earlier attempt is read
+  once first ("Checking the part downloaded before"). Size and the zip's directory can't see damage
+  inside the file. With a 4 MB stand-in release (`PKR_RELEASE_API=<url>` on the desktop): right
+  digest installs; wrong digest, and a resumed part with one changed byte, are rejected and
+  deleted; a release without a digest is checked by size and as a zip, as before. Not measured on
+  the Vita: the hash of 530 MB as it downloads, and the extra rename per save.
+- `build_vita.sh` ended with `; true`: after a compile error an older .vpk passed its check. It
+  now fails with the build's status (the full output is in `<build dir>/build.log`).
+tests/smoke and tests/phaser pass. tests/shaders fails two variant pixel checks on this machine's
+Mesa (Ubuntu 24.04, outside the Docker image) with and without these changes.
+
+### 1.1.4 on the Vita: a 25-minute session (log252/253, 2026-11-16)
+Game build of 2026-11-16 (battle-scene-DoWf36tN, loading-scene-Dd5CI3_R, egg-BDrHFWNL; Phaser 3.90).
+Waves 121-136 from a save (ice cave, then snowy forest, mostly doubles), two returns to the title.
+- All 23 gamefix rules matched the updated game's code.
+- First start after the update: every module compiled again (1.1.4's checksummed `.qbc4` and the
+  new game chunks): 23 modules in 20.6 s, the page's script evaluated after 36.7 s. Once only, like
+  log230/log243 after earlier updates.
+- The start screen took its first press at 35.1 s with no stall line, and the background work
+  (log upload, build check) finished within a second, so the wait was the player's.
+- Memory, against log246 (1.1.2, 18 waves): heap in use peaked at 171 MB (181), decoded audio
+  ended at 16.3 MB (26.8), JS left by collections 47 -> 57 -> 65 MB (47 -> 71). The M4A budget
+  dropped 6 sounds, none of which were played again (0 decoded again), so the replay path is
+  still unexercised on the console. WAV move sounds are now the bulk of decoded audio (~14 MB).
+- Battle JS per frame: median p50 32.8 ms (log246: 30.6, log243: 29.8), within what the biome and
+  doubles change. One minute of a trainer double at wave 122 ran at 12-19 fps (41 draw calls,
+  frames of ~420 ms every second or so); the sampler was off, so its cause is unknown.
+- Errors: only "Texture key already in use: PRAS- Psychic BG" (the game loading a move background
+  twice, also in log246/247) and the game's own "cry/N not found" warnings (also before 1.1.3).
+
+### 1.1.4 over 1 h 42 min of play (log254-256, 2026-11-17)
+The run of log252/253 continued (the console suspended in between): waves 121-184 from a save,
+seven returns to the title, 6108 s of play. No errors of ours, no failed allocation, no stall.
+- It ended at wave 184 (space, a trainer): the game's save check got "500 Internal Server Error"
+  from pokerogue.net ("System savedata verification failed!"), and the game reloaded itself to the
+  title as it does in a browser. The log stops ~10 s later at the title (app closed).
+- JS per frame follows the battle, not the session: mean p50 per wave 23-50 ms, tracking the draw
+  calls (busy doubles and weather: 28-31 draws, 44-50 ms; waves 181-184: 26-32 ms). No step after
+  title returns, so no per-run leak shows here. Mean over the session 34 ms (log246: 31).
+- Memory: heap in use peaked at 217 MB of 256 (the GC keeps 40 MB free; no emergency collection
+  was needed). What grew, waves 123 -> 184:
+  - JS left by collections 57 -> 90 MB (~0.55 MB a wave; the game's parsed move animations, see
+    1.1.3), and collections at wave starts took 2.0 -> 3.1 s as a result.
+  - Decoded audio 15 -> 32 MB: M4A held at 6 MB (89 dropped, 9 decoded again, nothing heard wrong),
+    so the growth is WAV move sounds, now ~26 MB.
+  - Decoded images 0.3 -> 8.7 MB: images drawn into canvases keep two decoded copies (straight
+    and premultiplied alpha) for as long as the image lives (canvas2d.c bitmap_surface).
+- Warnings, all the game's own and in earlier logs: "PRAS- Brave Bird"/"Dark void" have no frame N
+  (138), BattlerTag ... is missing a score, cry/N not found.
+
+### Memory over long sessions: move animations, WAV sounds, drawn images (runtime 1.1.5, 2026-11-18)
+From log256 (above). Game build of 2026-11-16; the extended test's offline game (1.12.1.1) on the
+desktop for measurements, GitHub Actions (this environment can't download the offline game).
+- Move animations: the game parses each move's battle-anims JSON into an AnimConfig once
+  (`initMoveAnim`, module map `ur`) and keeps it. A gamefix rule ("move animations reachable for
+  unloading") stores the map in `globalThis.__pkrMoveAnims` at each initMoveAnim call; the sprite
+  passes (new biome, new run, title, memory) drop animations loaded over a minute ago of moves no
+  Pokemon in either party has (moveset, summonData.moveset, getMoveset()). Kept always: Tackle,
+  Tail Whip, Focus Energy (the defaults useDefaultAnim copies) and Struggle, and entries still
+  loading (null). Safe because every path that plays a move loads it first when missing (a summoned
+  Pokemon's moveset through loadAssets, LoadMoveAnimPhase for called moves, a learned move, a
+  mystery encounter's loadCustomMovesForEncounter), and MoveAnim.getAnim reads with `?.` (a missing
+  one isn't drawn). Charge animations (`dr`) are read without that and stay. The first version
+  counted passes ("seen by an earlier pass") and dropped nothing in 15 waves; the map's set is now
+  wrapped to note load times. Extended test: 53 dropped, 36 kept at the biome change of wave 170,
+  no JS errors in the waves after; all six scenarios pass (gamefix=0: no map, nothing dropped).
+- WAV sounds: decoded samples are as big as the files (16-bit at their own rate), so keeping the
+  file saves nothing. WAVs now share the M4A budget (audiokeep, default 10 MB for both, was 6 for
+  M4A): a WAV chosen to drop has its samples written to `<data>/audio-cache/<n>.pcm` on the decode
+  thread (never under the mixer's lock) and is read back there when it plays next, its voice
+  waiting as for an M4A. The folder is emptied at start. tests/smoke checks write, drop and play.
+- Images: one drawn into a canvas kept its straight-alpha pixels and a premultiplied surface for
+  as long as it lived. The surface now replaces the pixels (a later texture upload decodes the file
+  again), and pixels unused for a minute are dropped every perf window (canvas_trim_images) and
+  decoded again when used. tests/smoke checks one copy, the drop and the redraw.
+- Desktop, wave-163 save, the same 15 waves with the savings on and off (scenario `keepall`:
+  audiokeep=10000, move animations kept): JS heap after a final collection 131 vs 139.3 MB;
+  decoded audio 9.9 vs 26.0 MB (231 dropped, 36 brought back, 195 WAVs written); decoded images
+  0.0 MB (1.1.4: 2.2), 66 decoded again in 21 ms in all. On the Vita the JS saving should be larger
+  (log256: ~0.55 MB a wave over six biome changes).
+- The [mem] lines now give images dropped and decoded again (with the time) and the WAVs written.
+- The extended test's bot looped in the party screen at wave 178 in 1.1.4 and 1.1.5 alike (a
+  Lum Berry reward); two bot fixes didn't get past it. Open; a stuck report now shows the party
+  handler's input flags.
+
+### Starter screen: another species' sprite after moving quickly (runtime 1.1.6, 2026-11-19)
+Reported with log258 (1.1.4) and two screenshots: Magnemite's details with Giratina's sprite,
+Pawniard's with Darkrai's, after moving through the starter list quickly. Nothing in the log (no
+missing animation, no sprite unloading on that screen). The game's own race, on the live build of
+2026-11-16: for a caught species the starter select screen hides the sprite and calls
+`updateSprite`, which awaits `species.loadAssets` and then plays and shows that species' sprite;
+nothing cancels an earlier request. loadAssets queues the atlas, then awaits the species' variant
+colours (a fetch) before waiting for the loader, so when the next species' colours come back first,
+its sprite shows and the earlier species' load then finishes and replaces it. The Vita's slower
+fetches and decodes make that order common. (The Pokedex page cancels its earlier load with
+assetLoadCancelled; this screen doesn't.)
+gamefix "starter sprite from the latest request only": updateSprite takes a ticket, and a load that
+finishes after a later request returns without playing. With loads in order the same sprite ends up
+shown (the earlier one is no longer flashed in between). tests/smoke runs the game's updateSprite
+both ways with loads finishing out of order and in order. Checked with node on the rewritten chunk;
+the desktop build couldn't be run here (Docker Hub refused the base image, 429), CI runs the tests.
+
+### 1.1.6 on the Vita: first session (log261, 2026-11-19)
+Game build of 2026-11-19 (battle-scene-Bssq5EFj, loading-scene-Cc7TO1w9, egg-NfoxcPzD): all 25
+gamefix rules matched; the first start compiled every module again (23 in 23.4 s, the page's script
+evaluated after 39 s). A new run to wave 21 (~10 min) and two returns to the title, the starter
+screen included (the owner: the wrong-sprite bug no longer shows). No errors, no failed allocation.
+1.1.5's memory savings on the console for the first time:
+- move animations dropped by the sprite passes: 4 (34 kept) and 18 (32 kept) at biome changes, 23
+  (9 kept) at the title; nothing failed to animate afterwards;
+- decoded audio held at 9.9 MB (152 dropped, 8 brought back, 136 WAVs written to the card);
+- decoded images 0.0 MB at the end (log258, 1.1.4: 13.5 MB after a long run), 110 decoded again in
+  253 ms in all (most of them images uploaded or drawn after their pixels went elsewhere, which
+  1.1.4 decoded again too, uncounted).
+Battle JS per frame: median p50 21.5 ms (early waves). Long frames only at start-up and behind the
+loading screen, as before.
+
+### 1.1.6 over half an hour (log263, 2026-11-20)
+A new start (waves 22-49 of the run from log261/262, 32 minutes, 28 waves). No errors, no failed
+allocation, start screen answered after 1.2 s; the audio cache folder emptied at start (145 files).
+- Memory flat: JS left by collections 47 -> 59 -> 59 MB (log246, 1.1.2: +22 MB in 18 waves); heap in
+  use peaked at 152 MB; decoded audio held at 10.0 MB (208 dropped, 43 brought back, 180 WAVs
+  written); decoded images at most 0.4 MB (193 decoded again in 691 ms over the session).
+- Move animations dropped at each of the six biome changes (11-27 each, 30-39 kept); no hitch from
+  parsing them again (one "[stuck]" in animation parsing, at start-up, as before).
+- Battle JS per frame: median p50 25.3 ms. Slow frames only at start-up and the session load.
+- 112 warnings "Texture "PRAS- Mud Shot" has no frame "1"" (1.1.4 logs: Brave Bird 105, Dark void,
+  Wish): the game makes each move animation's graphic sprite with frame 1 (addFieldSprite(0, 0,
+  graphic, 1)) before setting the frame it draws, and these graphics are one 96x96 frame (checked
+  the PNGs; Mud Shot's animation uses frame 0 only). Phaser warns and uses the base frame; the
+  same in a browser. Harmless; the count follows which moves are used.

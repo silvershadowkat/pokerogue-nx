@@ -133,6 +133,7 @@ bool dev_offer_update(void);           // start screen: installs a newer test bu
 void dev_send_log(void);               // L + R + START in game: uploads the current log
 void dev_send_bench_log(void);         // the benchmark page (bench/) is done: uploads its log
 void dev_frame(void);                  // main loop: shows upload results
+bool dev_upload_active(void);          // a log is being sent (the start screen says so)
 #else
 static inline void dev_early(void) {}
 static inline void dev_start(const char *prev_log) { (void)prev_log; }
@@ -140,9 +141,11 @@ static inline bool dev_offer_update(void) { return false; }
 static inline void dev_send_log(void) {}
 static inline void dev_send_bench_log(void) {}
 static inline void dev_frame(void) {}
+static inline bool dev_upload_active(void) { return false; }
 #endif                 // offline_install.c: download <data>/game.zip (or an update)
 void offline_update_check_start(void);      // background check for a newer offline game release
 const char *offline_update_available(const char *installed); // its tag, or NULL
+bool offline_check_active(void);          // that check is still waiting for GitHub
 void plat_shutdown(void);
 // Returns false when there are no more events.
 bool plat_poll_event(plat_event *ev);
@@ -206,14 +209,16 @@ void net_poll(JSContext *ctx);                 // deliver finished requests
 void net_pump(void);                           // progress transfers only (from long JS runs)
 void net_set_origin(const char *page_url);
 double net_clock_offset_ms(void);              // server time - console clock (0 if unknown/close)     // the page origin sent as Origin/Referer
+// data (or NULL) gets every piece once it is written to the file, in order (a running checksum).
 bool net_download_file(const char *url, const char *path, bool (*progress)(long long done, long long total, void *ud),
-                       void *ud, char *err, size_t errn);
+                       void (*data)(const void *p, size_t n, void *ud), void *ud, char *err, size_t errn);
 void net_stats(char *out, size_t n);           // one-line summary for the log
 void image_decode_stats(char *out, size_t n);   // images decoded since the last call (canvas2d.c)
 void net_register(JSContext *ctx, JSValue native);
 bool host_random_bytes(void *buf, size_t n);
 // Blocking GET used by the module loader. Returns malloc'd body or NULL.
 char *net_get_sync(const char *url, size_t *len, long *status);
+bool net_cache_forget(const char *url); // drops url's disk-cache copy; true if there was one
 char *net_get_threadsafe(const char *url, size_t *len, long *status); // own connection, any thread
 long net_post_threadsafe(const char *url, const char *const *headers, const void *body, size_t len, char *err, size_t errn);
 #define LOCAL_ORIGIN "https://offline.invalid" // origin of the game in local mode (local=<dir>)
@@ -238,6 +243,8 @@ void audio_init(void);                                    // audio.c: decoder th
 void audio_register(JSContext *ctx, JSValue native);      // audio.c: __native.audio*
 void savecrypt_register(JSContext *ctx, JSValue native);  // savecrypt.c: __native.aesEncrypt/aesDecrypt
 void audio_memory(size_t *pcm, size_t *mp3, int *active_voices);
+void audio_set_keep_budget(size_t bytes); // decoded M4A samples kept (config.txt audiokeep=<MB>, audio.c)
+void audio_memory_kept(size_t *kept_pcm, size_t *files, int *dropped, int *redecoded, int *written); // M4A and WAV buffers (audio.c)
 
 // Status messages drawn before the game takes over the screen (overlay.c).
 void overlay_set(const char *msg);
@@ -267,6 +274,8 @@ void config_set(const char *key, const char *value); // key=value in config.txt 
 bool fields_draw(void); // the game's text input fields (js/input.js -> __native.setFieldOverlays)
 void fields_set(int n);
 bool fields_draw_pending(void);
+void host_js_memory(double *live, double *heap_size); // JS left by the last collection, fixed heap (main.c)
+void host_log_open(const char *why);   // starts log.txt (main.c): at startup, or the start screen's toggle
 bool host_gc_for_alloc(const char *what); // an allocation failed: collect, true if it did (main.c)
 void gc_at_save_request(void);       // the game saved its run: a good time to collect (main.c)
 bool text_field_shown(void);           // a game text field (login form...) was drawn last frame (js/input.js)
@@ -301,6 +310,8 @@ const char *host_version_string(void);  // "PokeRogue Vita 0.18 (abc1234)"
 
 // Bytes held by decoded-image objects: compressed files kept, and decoded pixels currently alive.
 void canvas_image_memory(size_t *encoded, size_t *decoded);
+void canvas_trim_images(void);
+void canvas_image_trim_stats(int *dropped, int *redecoded, double *redecode_ms);
 void canvas_memory(size_t *canvas_bytes, int *canvas_count, size_t *font_bytes);
 
 // Pixel source lookup shared by gl.c (texImage2D) and canvas2d.c (drawImage).

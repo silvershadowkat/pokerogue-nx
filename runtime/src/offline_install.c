@@ -12,6 +12,12 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <time.h>
+#include <strings.h>
+#ifdef PKR_MBEDTLS
+#include <mbedtls/md.h>
+#else
+#include <openssl/evp.h>
+#endif
 
 #include "host.h"
 #include "miniz.h"
@@ -129,6 +135,7 @@ static void latest_path(char *out, size_t n,int channel) { snprintf(out, n, "%s/
 
 static void *check_thread(void *arg) {
     int channel=(int)(intptr_t)arg;
+    plat_thread_setup("pkr_check", 1, 10);
     size_t len = 0;
     long status = 0;
     char *json = net_get_threadsafe(channel?DEBUG_API:RELEASE_API, &len, &status);
@@ -183,6 +190,12 @@ static void game_update_check_start(int channel) {
     pthread_mutex_unlock(&check_lock);
 }
 
+bool offline_check_active(void) {
+    pthread_mutex_lock(&check_lock);
+    bool active = check_running[0] || check_running[1];
+    pthread_mutex_unlock(&check_lock); return active;
+}
+
 // The newer release's tag, or NULL (no update known, or `installed` is the latest).
 static const char *game_update_available(const char *installed,int channel) {
     static char out[2][64];
@@ -227,13 +240,38 @@ bool ui_confirm(const char *msg) {
 
 bool ui_download(const char *url, const char *path, const char *what, char *err, size_t errn) {
     progress_ui ui = {.t0 = host_now_ms(), .what = what};
-    return net_download_file(url, path, show_progress, &ui, err, errn);
+    return net_download_file(url, path, show_progress, NULL, &ui, err, errn);
 }
 
 // Downloads the latest release to <data>/game.zip (replacing an installed one only once the
 // download is complete). Returns true when <data>/game.zip is ready.
 // Keep immutable base archives by version. Updating Offline cannot strand a
 // Debug pack on newer, incompatible assets, and both modes share the same ZIP.
+// Validate completed/resumed downloads before replacing an installed archive.
+static bool package_digest_matches(const char *path, const char *expected) {
+    if (!*expected) return true; // Older releases did not publish a digest.
+    FILE *f = fopen(path, "rb"); if (!f) return false;
+    unsigned char buf[65536], sum[32] = {0}; size_t n; bool ok;
+#ifdef PKR_MBEDTLS
+    mbedtls_md_context_t ctx; mbedtls_md_init(&ctx);
+    ok = mbedtls_md_setup(&ctx, mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), 0) == 0;
+    if (ok) ok = mbedtls_md_starts(&ctx) == 0;
+    while (ok && (n = fread(buf, 1, sizeof buf, f))) ok = mbedtls_md_update(&ctx, buf, n) == 0;
+    if (ok) ok = mbedtls_md_finish(&ctx, sum) == 0;
+    mbedtls_md_free(&ctx);
+#else
+    EVP_MD_CTX *ctx = EVP_MD_CTX_new();
+    ok = ctx && EVP_DigestInit_ex(ctx, EVP_sha256(), NULL);
+    while (ok && (n = fread(buf, 1, sizeof buf, f))) ok = EVP_DigestUpdate(ctx, buf, n);
+    unsigned int len = 0;
+    if (ok) ok = EVP_DigestFinal_ex(ctx, sum, &len) && len == sizeof sum;
+    EVP_MD_CTX_free(ctx);
+#endif
+    ok = ok && !ferror(f); fclose(f);
+    char hex[65]; for (int i = 0; i < 32; i++) snprintf(hex + i * 2, 3, "%02x", sum[i]);
+    return ok && !strcasecmp(hex, expected + 7);
+}
+
 static bool regular_archive(const char *path){
     mz_zip_archive z={0};if(!mz_zip_reader_init_file(&z,path,0))return false;
     bool ok=mz_zip_reader_locate_file(&z,"index.html",NULL,0)>=0&&mz_zip_reader_locate_file(&z,"pokerogue-debug.json",NULL,0)<0;
@@ -274,6 +312,11 @@ static bool game_install(bool debug,const char *requested,bool activate){
     if(!asset){snprintf(pattern,sizeof pattern,"\"name\": \"%s\"",asset_name);asset=strstr(json,pattern);}
     long long expected=asset?json_num(asset,"size"):-1;
     bool url_ok=asset&&json_str(asset,"browser_download_url",url,sizeof url);
+    char digest[96] = "";
+    const char *dg = asset ? strstr(asset, "\"digest\":") : NULL;
+    const char *dl = asset ? strstr(asset, "\"browser_download_url\":") : NULL;
+    if (!dg || !dl || dg > dl || !json_str(dg, "digest", digest, sizeof digest)
+        || strncmp(digest, "sha256:", 7) || strlen(digest) != 71) digest[0] = 0;
     free(json);
     if(!version_ok||!url_ok||expected<=0){ui_message_wait("This release has no valid compatible game package.\nThe installed version is kept.");return false;}
     if(debug)snprintf(game_zip,sizeof game_zip,"%s/debug-game.zip",g_cfg.app_dir);
@@ -288,12 +331,12 @@ static bool game_install(bool debug,const char *requested,bool activate){
     if(free_bytes>=0&&free_bytes+done<expected+16*1024*1024){ui_message_wait("Not enough free space to download safely.\nThe installed game and local saves are kept.");return false;}
     char what[200];snprintf(what,sizeof what,debug?"Downloading Debug patch pack (%s)":"Downloading shared game assets (%s)",version);
     progress_ui progress={.t0=host_now_ms(),.what=what};
-    if(!net_download_file(url,partial,show_progress,&progress,err,sizeof err)){
+    if(!net_download_file(url,partial,show_progress,NULL,&progress,err,sizeof err)){
         if(strcmp(err,"cancelled"))ui_message_wait("The download stopped. Choose the mode again to resume it.");return false;
     }
     debug_package_info info;
     bool size_ok=stat(partial,&st)==0&&st.st_size==expected;
-    bool valid=size_ok&&(debug?game_debug_info(partial,&info):regular_archive(partial));
+    bool valid=size_ok&&package_digest_matches(partial,digest)&&(debug?game_debug_info(partial,&info):regular_archive(partial));
     if(valid&&debug)valid=!strcmp(info.version,version);
     if(!valid){remove(partial);ui_message_wait("The downloaded package failed its version or archive check.\nThe installed game is kept.");return false;}
     // Fetch the precise unmodified base, not whatever happens to be latest
